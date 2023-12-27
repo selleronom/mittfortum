@@ -2,7 +2,11 @@
 from datetime import timedelta
 import logging
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorStateClass,
+)
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
     DataUpdateCoordinator,
@@ -32,11 +36,16 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         update_method=api.get_data,
         update_interval=timedelta(minutes=30),
     )
+    entities = [
+        FortumEnergySensor(coordinator, entry, "kWh"),
+        FortumCostSensor(coordinator, entry, "SEK"),
+    ]
+
     await coordinator.async_config_entry_first_refresh()
-    async_add_entities([FortumSensor(coordinator, entry, "kWh")])
+    async_add_entities(entities)
 
 
-class FortumSensor(CoordinatorEntity, SensorEntity):
+class FortumEnergySensor(CoordinatorEntity, SensorEntity):
     """Class representing the Fortum energy consumption sensor."""
 
     def __init__(self, coordinator, entry, unit_of_measurement) -> None:
@@ -48,12 +57,12 @@ class FortumSensor(CoordinatorEntity, SensorEntity):
     @property
     def unique_id(self) -> str:
         """Return the unique ID of the sensor."""
-        return self._entry.entry_id
+        return f"{self._entry.entry_id}_energy_consumption"
 
     @property
     def name(self) -> str:
         """Return the name of the sensor."""
-        return "Fortum Energy Consumption"
+        return "MittFortum Energy Consumption"
 
     @property
     def state(self) -> int | None:
@@ -84,11 +93,51 @@ class FortumSensor(CoordinatorEntity, SensorEntity):
         return self._unit_of_measurement
 
     @property
-    def device_class(self) -> str:
+    def device_class(self) -> SensorDeviceClass:
         """Return the class of this device, from component DEVICE_CLASSES."""
-        return "energy"
+        return SensorDeviceClass.ENERGY
 
     @property
-    def state_class(self) -> str:
+    def state_class(self) -> SensorStateClass:
         """Return the state class of this device."""
-        return "total"
+        return SensorStateClass.TOTAL
+
+
+class FortumCostSensor(CoordinatorEntity, SensorEntity):
+    """Representation of a Fortum Cost Sensor."""
+
+    def __init__(self, coordinator, entry, unit_of_measurement) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._entry = entry
+        self._unit_of_measurement = unit_of_measurement
+
+    @property
+    def unique_id(self) -> str:
+        """Return the unique ID of the sensor."""
+        return f"{self._entry.entry_id}_cost"
+
+    @property
+    def name(self) -> str:
+        """Return the name of the sensor."""
+        return "MittFortum Total Cost"
+
+    @property
+    def state(self) -> float | None:
+        """Return the state of the sensor."""
+        return self.coordinator.data[0]["cost"]
+
+    @property
+    def unit_of_measurement(self) -> str:
+        """Return the unit of measurement."""
+        return self._unit_of_measurement
+
+    @property
+    def device_class(self) -> SensorDeviceClass:
+        """Return the class of this device, from component DEVICE_CLASSES."""
+        return SensorDeviceClass.MONETARY
+
+    @property
+    def state_class(self) -> SensorStateClass:
+        """Return the state class of this device."""
+        return SensorStateClass.TOTAL

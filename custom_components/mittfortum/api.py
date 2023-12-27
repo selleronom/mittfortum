@@ -1,6 +1,7 @@
 """Module for interacting with the Fortum service API."""
 from datetime import datetime, timedelta
 
+from dateutil.relativedelta import relativedelta
 import httpx
 
 
@@ -92,7 +93,7 @@ class FortumAPI:
         elif resolution.lower() == "daily":
             from_date = (now - timedelta(days=1)).isoformat()
         else:  # Monthly
-            from_date = now.replace(day=1).isoformat()
+            from_date = (now - relativedelta(months=1)).replace(day=1).isoformat()
 
         to_date = now.isoformat()
 
