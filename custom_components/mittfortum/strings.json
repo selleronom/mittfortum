@@ -1,0 +1,25 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "data": {
+          "username": "Username for MittFortum",
+          "password": "Password for MittFortum",
+          "customer_id": "Your Customer ID",
+          "metering_point": "Your Metering Point",
+          "resolution": "Resolution (e.g., 'monthly')",
+          "street_address": "Your Street Address",
+          "city": "Your City Name (CAPITAL LETTERS)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
+      "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
+      "unknown": "[%key:common::config_flow::error::unknown%]"
+    },
+    "abort": {
+      "already_configured": "[%key:common::config_flow::abort::already_configured_device%]"
+    }
+  }
+}

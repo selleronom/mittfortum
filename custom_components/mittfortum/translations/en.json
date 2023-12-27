@@ -1,0 +1,25 @@
+{
+    "config": {
+        "abort": {
+            "already_configured": "Device is already configured"
+        },
+        "error": {
+            "cannot_connect": "Failed to connect",
+            "invalid_auth": "Invalid authentication",
+            "unknown": "Unexpected error"
+        },
+        "step": {
+            "user": {
+                "data": {
+                    "city": "Your City Name (CAPITAL LETTERS)",
+                    "customer_id": "Your Customer ID",
+                    "metering_point": "Your Metering Point",
+                    "password": "Password for MittFortum",
+                    "resolution": "Resolution (e.g., 'monthly')",
+                    "street_address": "Your Street Address",
+                    "username": "Username for MittFortum"
+                }
+            }
+        }
+    }
+}

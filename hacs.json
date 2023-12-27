@@ -1,0 +1,10 @@
+{
+    "name": "MittFortum",
+    "domains": ["sensor"],
+    "documentation": "https://github.com/selleronom/mittfortum",
+    "issue_tracker": "https://github.com/selleronom/mittfortum/issues",
+    "dependencies": [],
+    "country": ["SE"],
+    "homeassistant": "2023.1.0",
+    "render_readme": true
+  }
