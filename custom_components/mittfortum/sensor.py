@@ -29,12 +29,12 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         None
     """
     api = hass.data[DOMAIN][entry.entry_id]
-    coordinator = DataUpdateCoordinator(
+    coordinator = FortumDataUpdateCoordinator(
         hass,
         _LOGGER,
         name="sensor",
         update_method=api.get_data,
-        update_interval=timedelta(minutes=30),
+        update_interval=timedelta(minutes=5),
     )
     entities = [
         FortumEnergySensor(coordinator, entry, "kWh"),
@@ -43,6 +43,28 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 
     await coordinator.async_config_entry_first_refresh()
     async_add_entities(entities)
+
+
+class FortumDataUpdateCoordinator(DataUpdateCoordinator):
+    """Class to manage fetching data from the API."""
+
+    def __init__(self, hass, logger, name, update_method, update_interval) -> None:
+        """Initialize the global scene coordinator."""
+        super().__init__(
+            hass,
+            logger,
+            name=name,
+            update_method=update_method,
+            update_interval=update_interval,
+        )
+
+    async def _async_update_data(self):
+        """Update data via library."""
+        try:
+            return await super()._async_update_data()
+        except Exception as e:
+            _LOGGER.error("Failed to update data: %s", e)
+            return []
 
 
 class FortumEnergySensor(CoordinatorEntity, SensorEntity):

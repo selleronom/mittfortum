@@ -50,17 +50,26 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
 
     Data has the keys from STEP_USER_DATA_SCHEMA with values provided by the user.
     """
-    api = FortumAPI(
-        data[CONF_USERNAME],
-        data[CONF_PASSWORD],
-        data["customer_id"],
-        data["metering_point"],
-        data["resolution"],
-        data["street_address"],
-        data["city"],
-    )
-    if not await api.login():
-        raise InvalidAuth
+    try:
+        api = FortumAPI(
+            data[CONF_USERNAME],
+            data[CONF_PASSWORD],
+            data["customer_id"],
+            data["metering_point"],
+            data["resolution"],
+            data["street_address"],
+            data["city"],
+        )
+    except Exception as e:
+        _LOGGER.error("Failed to create API: %s", e)
+        raise CannotConnect(f"Failed to create API: {e}") from e
+
+    try:
+        if not await api.login():
+            raise InvalidAuth
+    except Exception as e:
+        _LOGGER.error("Failed to login: %s", e)
+        raise CannotConnect(f"Failed to login: {e}") from e
 
     return {"title": data[CONF_USERNAME]}
 
@@ -78,8 +87,13 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 info = await validate_input(self.hass, user_input)
                 return self.async_create_entry(title=info["title"], data=user_input)
             except InvalidAuth:
+                _LOGGER.error("Invalid authentication")
                 errors["base"] = "invalid_auth"
-            except Exception:  # for unexpected exceptions
+            except CannotConnect as e:
+                _LOGGER.error("Cannot connect: %s", e)
+                errors["base"] = str(e)
+            except Exception as e:  # for unexpected exceptions
+                _LOGGER.error("Unexpected error: %s", e)
                 errors["base"] = "unknown"
         return self.async_show_form(
             step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors

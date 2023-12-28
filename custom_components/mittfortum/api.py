@@ -1,8 +1,15 @@
 """Module for interacting with the Fortum service API."""
 from datetime import datetime, timedelta
+import json
+import logging
 
 from dateutil.relativedelta import relativedelta
 import httpx
+
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class FortumAPI:
@@ -108,4 +115,28 @@ class FortumAPI:
         }
         async with httpx.AsyncClient() as client:
             response = await client.post(url, headers=headers, json=data)
-        return response.json()
+        if response.status_code != 200:
+            _LOGGER.error("Unexpected status code %s from API", response.status_code)
+            raise UnexpectedStatusCode(
+                f"Unexpected status code {response.status_code} from API"
+            )
+        if not response.text:
+            _LOGGER.error("Empty response from API")
+            raise InvalidResponse("Empty response from API")
+        try:
+            return response.json()
+        except json.JSONDecodeError as e:
+            _LOGGER.error("Invalid JSON in response")
+            raise InvalidResponse("Invalid JSON in response") from e
+
+
+class APIError(Exception):
+    """Raised when there's an error related to the API."""
+
+
+class InvalidResponse(APIError):
+    """Raised when the API response is invalid."""
+
+
+class UnexpectedStatusCode(APIError):
+    """Raised when the API response has an unexpected status code."""

@@ -1,6 +1,8 @@
 """The MittFortum integration."""
 from __future__ import annotations
 
+import logging
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, Platform
 from homeassistant.core import HomeAssistant
@@ -8,6 +10,7 @@ from homeassistant.core import HomeAssistant
 from .api import FortumAPI  # Import the API class
 from .const import DOMAIN
 
+_LOGGER = logging.getLogger(__name__)
 PLATFORMS: list[Platform] = [Platform.SENSOR]
 
 
@@ -24,19 +27,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     street_address = entry.data["street_address"]
     city = entry.data["city"]
 
-    # Create API instance
-    api = FortumAPI(
-        username,
-        password,
-        customer_id,
-        metering_point,
-        resolution,
-        street_address,
-        city,
-    )
+    try:
+        # Create API instance
+        api = FortumAPI(
+            username,
+            password,
+            customer_id,
+            metering_point,
+            resolution,
+            street_address,
+            city,
+        )
 
-    # Validate the API connection (and authentication)
-    await api.login()
+        # Validate the API connection (and authentication)
+        await api.login()
+    except Exception as e:
+        _LOGGER.error("Failed to set up MittFortum: %s", e)
+        return False
 
     # Store an API object for your platforms to access
     hass.data[DOMAIN][entry.entry_id] = api
