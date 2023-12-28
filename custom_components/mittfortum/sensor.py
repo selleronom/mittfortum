@@ -87,12 +87,10 @@ class FortumEnergySensor(CoordinatorEntity, SensorEntity):
         return "MittFortum Energy Consumption"
 
     @property
-    def state(self) -> int | None:
+    def native_value(self) -> float | None:
         """Return the state of the sensor."""
-        # The coordinator's data is the response from your API
         data = self.coordinator.data
         if data:
-            # Extract the value from the first item in the response
             return data[0]["value"]
         else:
             return None
@@ -110,7 +108,7 @@ class FortumEnergySensor(CoordinatorEntity, SensorEntity):
             return {}
 
     @property
-    def unit_of_measurement(self) -> str:
+    def native_unit_of_measurement(self) -> str:
         """Return the unit of measurement."""
         return self._unit_of_measurement
 
@@ -145,12 +143,12 @@ class FortumCostSensor(CoordinatorEntity, SensorEntity):
         return "MittFortum Total Cost"
 
     @property
-    def state(self) -> float | None:
+    def native_value(self) -> float | None:
         """Return the state of the sensor."""
         return self.coordinator.data[0]["cost"]
 
     @property
-    def unit_of_measurement(self) -> str:
+    def native_unit_of_measurement(self) -> str:
         """Return the unit of measurement."""
         return self._unit_of_measurement
 

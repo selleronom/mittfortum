@@ -6,9 +6,6 @@ import logging
 from dateutil.relativedelta import relativedelta
 import httpx
 
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
-
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -72,6 +69,22 @@ class FortumAPI:
             self.city,
         )
 
+    async def _post(self, url, data):
+        headers = {"Authorization": f"Bearer {self.session_token}"}
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, headers=headers, json=data)
+        if response.status_code == 403:
+            _LOGGER.info("Session expired, renewing login")
+            await self.login()
+            headers = {"Authorization": f"Bearer {self.session_token}"}
+            response = await client.post(url, headers=headers, json=data)
+        elif response.status_code != 200:
+            _LOGGER.error("Unexpected status code %s from API", response.status_code)
+            raise UnexpectedStatusCode(
+                f"Unexpected status code {response.status_code} from API"
+            )
+        return response
+
     async def _get_data(
         self,
         customer_id,
@@ -105,7 +118,6 @@ class FortumAPI:
         to_date = now.isoformat()
 
         url = f"https://retail-lisa-eu-prd-energyflux.herokuapp.com/api/consumption/customer/{customer_id}/meteringPoint/{metering_point}"
-        headers = {"Authorization": f"Bearer {self.session_token}"}
         data = {
             "from": from_date,
             "to": to_date,
@@ -113,13 +125,7 @@ class FortumAPI:
             "postalAddress": street_address,
             "postOffice": city,
         }
-        async with httpx.AsyncClient() as client:
-            response = await client.post(url, headers=headers, json=data)
-        if response.status_code != 200:
-            _LOGGER.error("Unexpected status code %s from API", response.status_code)
-            raise UnexpectedStatusCode(
-                f"Unexpected status code {response.status_code} from API"
-            )
+        response = await self._post(url, data)
         if not response.text:
             _LOGGER.error("Empty response from API")
             raise InvalidResponse("Empty response from API")
@@ -140,3 +146,19 @@ class InvalidResponse(APIError):
 
 class UnexpectedStatusCode(APIError):
     """Raised when the API response has an unexpected status code."""
+
+
+class LoginError(Exception):
+    """Exception raised for errors in the login process."""
+
+    def __init__(self, message="Failed to log in to MittFortum") -> None:
+        self.message = message
+        super().__init__(self.message)
+
+
+class ConfigurationError(Exception):
+    """Exception raised for errors in the configuration process."""
+
+    def __init__(self, message="Invalid configuration for MittFortum") -> None:
+        self.message = message
+        super().__init__(self.message)
