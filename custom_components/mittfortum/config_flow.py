@@ -23,7 +23,6 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
         vol.Required(CONF_PASSWORD): str,
         vol.Required("customer_id"): str,
         vol.Required("metering_point"): str,
-        vol.Required("resolution"): vol.In(["monthly", "daily", "hourly"]),
         vol.Required("street_address"): str,
         vol.Required("city"): str,
     }
@@ -56,7 +55,6 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
             data[CONF_PASSWORD],
             data["customer_id"],
             data["metering_point"],
-            data["resolution"],
             data["street_address"],
             data["city"],
         )

@@ -15,7 +15,6 @@
                     "customer_id": "Your Customer ID",
                     "metering_point": "Your Metering Point",
                     "password": "Password for MittFortum",
-                    "resolution": "Resolution (e.g., 'monthly')",
                     "street_address": "Your Street Address",
                     "username": "Username for MittFortum"
                 }

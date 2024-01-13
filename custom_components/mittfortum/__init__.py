@@ -23,7 +23,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     password = entry.data[CONF_PASSWORD]
     customer_id = entry.data["customer_id"]
     metering_point = entry.data["metering_point"]
-    resolution = entry.data["resolution"]
     street_address = entry.data["street_address"]
     city = entry.data["city"]
 
@@ -34,7 +33,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             password,
             customer_id,
             metering_point,
-            resolution,
             street_address,
             city,
         )
