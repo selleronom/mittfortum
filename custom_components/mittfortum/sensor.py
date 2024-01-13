@@ -145,7 +145,10 @@ class FortumCostSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self) -> float | None:
         """Return the state of the sensor."""
-        return self.coordinator.data[0]["cost"]
+        if self.coordinator.data:
+            return self.coordinator.data[0]["cost"]
+        else:
+            return None
 
     @property
     def native_unit_of_measurement(self) -> str:
