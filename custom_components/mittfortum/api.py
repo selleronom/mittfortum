@@ -1,16 +1,13 @@
 """Module for interacting with the Fortum service API."""
-from datetime import datetime, timedelta
+from datetime import datetime
 import json
 import logging
 
-from dateutil.relativedelta import relativedelta
 import httpx
+from httpx import HTTPStatusError
 
 _LOGGER = logging.getLogger(__name__)
 
-
-import httpx
-from httpx import HTTPStatusError
 
 class FortumAPI:
     """API client for interacting with the Fortum service."""
@@ -24,7 +21,6 @@ class FortumAPI:
         password,
         customer_id,
         metering_point,
-        resolution,
         street_address,
         city,
     ) -> None:
@@ -32,7 +28,6 @@ class FortumAPI:
         self.password = password
         self.customer_id = customer_id
         self.metering_point = metering_point
-        self.resolution = resolution
         self.street_address = street_address
         self.city = city
         self.session_token = None
@@ -48,13 +43,11 @@ class FortumAPI:
             _LOGGER.error(f"Failed to login: {e}")
             return False
 
-    async def get_data(self):
-        if self.resolution not in ["hourly", "daily", "monthly"]:
-            raise ValueError("Invalid resolution. Expected 'hourly', 'daily', or 'monthly'.")
+    async def get_total_consumption(self):
         return await self._get_data(
             self.customer_id,
             self.metering_point,
-            self.resolution,
+            "yearly",
             self.street_address,
             self.city,
         )
@@ -71,7 +64,9 @@ class FortumAPI:
                 headers = {"Authorization": f"Bearer {self.session_token}"}
                 response = await client.post(url, headers=headers, json=data)
             elif response.status_code != 200:
-                _LOGGER.error("Unexpected status code %s from API", response.status_code)
+                _LOGGER.error(
+                    "Unexpected status code %s from API", response.status_code
+                )
                 raise UnexpectedStatusCode(
                     f"Unexpected status code {response.status_code} from API"
                 )
@@ -88,18 +83,13 @@ class FortumAPI:
         street_address,
         city,
     ):
-        now = datetime.now()
+        current_year = datetime.datetime.now().year
+        from_date = str(current_year - 5) + "-01-01"
+        to_date = str(current_year) + "-12-31"
 
-        if resolution.lower() == "hourly":
-            from_date = (now - timedelta(hours=1)).isoformat()
-        elif resolution.lower() == "daily":
-            from_date = (now - timedelta(days=1)).isoformat()
-        else:  # Monthly
-            from_date = (now - relativedelta(months=1)).replace(day=1).isoformat()
-
-        to_date = now.isoformat()
-
-        url = self.DATA_URL.format(customer_id=customer_id, metering_point=metering_point)
+        url = self.DATA_URL.format(
+            customer_id=customer_id, metering_point=metering_point
+        )
         data = {
             "from": from_date,
             "to": to_date,
