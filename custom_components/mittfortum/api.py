@@ -9,8 +9,14 @@ import httpx
 _LOGGER = logging.getLogger(__name__)
 
 
+import httpx
+from httpx import HTTPStatusError
+
 class FortumAPI:
     """API client for interacting with the Fortum service."""
+
+    LOGIN_URL = "https://retail-lisa-eu-auth.herokuapp.com/api/login"
+    DATA_URL = "https://retail-lisa-eu-prd-energyflux.herokuapp.com/api/consumption/customer/{customer_id}/meteringPoint/{metering_point}"
 
     def __init__(
         self,
@@ -22,17 +28,6 @@ class FortumAPI:
         street_address,
         city,
     ) -> None:
-        """Initialize a FortumAPI instance.
-
-        Args:
-            username (str): The username for authentication.
-            password (str): The password for authentication.
-            customer_id (str): The ID of the customer.
-            metering_point (str): The ID of the metering point.
-            resolution (str): The resolution of the data (e.g., "hourly", "daily").
-            street_address (str): The postal address of the customer.
-            city (str): The post office of the customer.
-        """
         self.username = username
         self.password = password
         self.customer_id = customer_id
@@ -43,24 +38,19 @@ class FortumAPI:
         self.session_token = None
 
     async def login(self):
-        """Perform login to obtain a session token.
-
-        Returns:
-            bool: True if login is successful and a session token is obtained, False otherwise.
-        """
-        login_url = "https://retail-lisa-eu-auth.herokuapp.com/api/login"
         login_data = {"username": self.username, "password": self.password}
-        async with httpx.AsyncClient() as client:
-            response = await client.post(login_url, data=login_data)
-        self.session_token = response.json().get("access_token")
-        return self.session_token is not None
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(self.LOGIN_URL, data=login_data)
+            self.session_token = response.json().get("access_token")
+            return self.session_token is not None
+        except HTTPStatusError as e:
+            _LOGGER.error(f"Failed to login: {e}")
+            return False
 
     async def get_data(self):
-        """Retrieve consumption data for a specific customer and metering point.
-
-        Returns:
-            dict: The consumption data in JSON format.
-        """
+        if self.resolution not in ["hourly", "daily", "monthly"]:
+            raise ValueError("Invalid resolution. Expected 'hourly', 'daily', or 'monthly'.")
         return await self._get_data(
             self.customer_id,
             self.metering_point,
@@ -71,19 +61,24 @@ class FortumAPI:
 
     async def _post(self, url, data):
         headers = {"Authorization": f"Bearer {self.session_token}"}
-        async with httpx.AsyncClient() as client:
-            response = await client.post(url, headers=headers, json=data)
-        if response.status_code == 403:
-            _LOGGER.info("Session expired, renewing login")
-            await self.login()
-            headers = {"Authorization": f"Bearer {self.session_token}"}
-            response = await client.post(url, headers=headers, json=data)
-        elif response.status_code != 200:
-            _LOGGER.error("Unexpected status code %s from API", response.status_code)
-            raise UnexpectedStatusCode(
-                f"Unexpected status code {response.status_code} from API"
-            )
-        return response
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(url, headers=headers, json=data)
+            if response.status_code == 403:
+                _LOGGER.info("Session expired, renewing login")
+                if not await self.login():
+                    raise Exception("Failed to renew login")
+                headers = {"Authorization": f"Bearer {self.session_token}"}
+                response = await client.post(url, headers=headers, json=data)
+            elif response.status_code != 200:
+                _LOGGER.error("Unexpected status code %s from API", response.status_code)
+                raise UnexpectedStatusCode(
+                    f"Unexpected status code {response.status_code} from API"
+                )
+            return response
+        except HTTPStatusError as e:
+            _LOGGER.error(f"Failed to post data: {e}")
+            return None
 
     async def _get_data(
         self,
@@ -93,19 +88,6 @@ class FortumAPI:
         street_address,
         city,
     ):
-        """Retrieve consumption data for a specific customer and metering point.
-
-        Args:
-            customer_id (str): The ID of the customer.
-            metering_point (str): The ID of the metering point.
-            resolution (str): The resolution of the data (e.g., "hourly", "daily").
-            street_address (str): The postal address of the customer.
-            city (str): The post office of the customer.
-
-        Returns:
-            dict: The consumption data in JSON format.
-        """
-
         now = datetime.now()
 
         if resolution.lower() == "hourly":
@@ -117,7 +99,7 @@ class FortumAPI:
 
         to_date = now.isoformat()
 
-        url = f"https://retail-lisa-eu-prd-energyflux.herokuapp.com/api/consumption/customer/{customer_id}/meteringPoint/{metering_point}"
+        url = self.DATA_URL.format(customer_id=customer_id, metering_point=metering_point)
         data = {
             "from": from_date,
             "to": to_date,
@@ -126,13 +108,13 @@ class FortumAPI:
             "postOffice": city,
         }
         response = await self._post(url, data)
-        if not response.text:
+        if response is None or not response.text:
             _LOGGER.error("Empty response from API")
             raise InvalidResponse("Empty response from API")
         try:
             return response.json()
         except json.JSONDecodeError as e:
-            _LOGGER.error("Invalid JSON in response")
+            _LOGGER.error(f"Invalid JSON in response: {response.text}")
             raise InvalidResponse("Invalid JSON in response") from e
 
 
