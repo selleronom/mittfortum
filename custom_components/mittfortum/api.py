@@ -83,8 +83,8 @@ class FortumAPI:
         street_address,
         city,
     ):
-        current_year = datetime.datetime.now().year
-        from_date = str(current_year - 5) + "-01-01"
+        current_year = datetime.now().year
+        from_date = str(current_year - 4) + "-01-01"
         to_date = str(current_year) + "-12-31"
 
         url = self.DATA_URL.format(
