@@ -33,8 +33,8 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         hass,
         _LOGGER,
         name="sensor",
-        update_method=api.get_data,
-        update_interval=timedelta(minutes=5),
+        update_method=api.get_total_consumption,
+        update_interval=timedelta(minutes=30),
     )
     entities = [
         FortumEnergySensor(coordinator, entry, "kWh"),
