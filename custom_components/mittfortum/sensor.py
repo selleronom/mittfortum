@@ -91,7 +91,7 @@ class FortumEnergySensor(CoordinatorEntity, SensorEntity):
         """Return the state of the sensor."""
         data = self.coordinator.data
         if data:
-            return data[0]["value"]
+            return sum(item["value"] for item in data)
         else:
             return None
 
@@ -101,7 +101,6 @@ class FortumEnergySensor(CoordinatorEntity, SensorEntity):
         data = self.coordinator.data
         if data:
             return {
-                "temperature": data[0]["temp"],
                 "date": data[0]["dateTime"],
             }
         else:
@@ -145,8 +144,9 @@ class FortumCostSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self) -> float | None:
         """Return the state of the sensor."""
+        data = self.coordinator.data
         if self.coordinator.data:
-            return self.coordinator.data[0]["cost"]
+            return sum(item["cost"] for item in data)
         else:
             return None
 
