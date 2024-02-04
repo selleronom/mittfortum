@@ -34,13 +34,21 @@ class FortumAPI:
 
     async def login(self):
         login_data = {"username": self.username, "password": self.password}
+        response = None
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(self.LOGIN_URL, data=login_data)
+            response.raise_for_status()
             self.session_token = response.json().get("access_token")
             return self.session_token is not None
-        except HTTPStatusError as e:
+        except httpx.HTTPStatusError as e:
             _LOGGER.error(f"Failed to login: {e}")
+            return False
+        except json.JSONDecodeError:
+            if response is not None:
+                _LOGGER.error(f"Failed to parse response as JSON: {response.content}")
+            else:
+                _LOGGER.error("Failed to parse response as JSON, but no response was received")
             return False
 
     async def get_total_consumption(self):
