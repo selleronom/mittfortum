@@ -13,7 +13,7 @@ _LOGGER = logging.getLogger(__name__)
 class FortumAPI:
     """API client for interacting with the Fortum service."""
 
-    LOGIN_URL = "https://sso.fortum.com/am/oauth2/access_token/"
+    LOGIN_URL = "https://sso.fortum.com/am/oauth2/access_token"
     DATA_URL = "https://retail-lisa-eu-prd-energyflux.herokuapp.com/api/consumption/customer/{customer_id}/meteringPoint/{metering_point}"
 
     def __init__(
