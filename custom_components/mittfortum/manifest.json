@@ -8,8 +8,8 @@
   "issue_tracker": "https://github.com/selleronom/mittfortum/issues",
   "homekit": {},
   "iot_class": "cloud_polling",
-  "requirements": [],
+  "requirements": ["seleniumwire"],
   "ssdp": [],
   "zeroconf": [],
-  "version": "0.3.2"
+  "version": "0.4.0"
 }
