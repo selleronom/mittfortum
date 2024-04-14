@@ -1,4 +1,5 @@
 """Config flow for MittFortum integration."""
+
 from __future__ import annotations
 
 import logging
@@ -7,7 +8,7 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
+from homeassistant.const import CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
@@ -20,7 +21,6 @@ _LOGGER = logging.getLogger(__name__)
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_USERNAME): str,
-        vol.Required(CONF_PASSWORD): str,
         vol.Required("customer_id"): str,
         vol.Required("metering_point"): str,
         vol.Required("street_address"): str,
@@ -52,7 +52,6 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
     try:
         api = FortumAPI(
             data[CONF_USERNAME],
-            data[CONF_PASSWORD],
             data["customer_id"],
             data["metering_point"],
             data["street_address"],

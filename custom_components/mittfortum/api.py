@@ -2,17 +2,10 @@
 
 import json
 import logging
-import time
 from datetime import datetime
 
 import httpx
 from httpx import HTTPStatusError
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.ui import WebDriverWait
-from seleniumwire import webdriver
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -20,20 +13,18 @@ _LOGGER = logging.getLogger(__name__)
 class FortumAPI:
     """API client for interacting with the Fortum service."""
 
-    LOGIN_URL = "https://www.mittfortum.se/"
+    LOGIN_URL = "https://sso.fortum.com/am/oauth2/access_token/"
     DATA_URL = "https://retail-lisa-eu-prd-energyflux.herokuapp.com/api/consumption/customer/{customer_id}/meteringPoint/{metering_point}"
 
     def __init__(
         self,
-        username,
-        password,
+        refresh_token,
         customer_id,
         metering_point,
         street_address,
         city,
     ) -> None:
-        self.username = username
-        self.password = password
+        self.refresh_token = refresh_token
         self.customer_id = customer_id
         self.metering_point = metering_point
         self.street_address = street_address
@@ -41,48 +32,34 @@ class FortumAPI:
         self.session_token = None
 
     async def login(self):
-        options = Options()
-        options.add_argument(argument="--headless")
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        payload = {
+            "grant_type": "refresh_token",
+            "refresh_token": self.refresh_token,
+            "client_id": "swedenmypagesprod",
+        }
+        response = None
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    self.LOGIN_URL, data=payload, headers=headers
+                )
+            response.raise_for_status()
+            self.session_token = response.json().get("access_token")
+            self.refresh_token = response.json().get("refresh_token")
 
-        driver = webdriver.Chrome(options=options)
-        driver.get(url=self.LOGIN_URL)
-
-        wait = WebDriverWait(driver=driver, timeout=10)
-
-        username_field = wait.until(
-            method=EC.presence_of_element_located(
-                locator=(By.ID, "floatingLabelInput34")
-            )
-        )
-        password_field = wait.until(
-            method=EC.presence_of_element_located(
-                locator=(By.ID, "floatingLabelInput39")
-            )
-        )
-
-        username_field.send_keys(self.username)
-        password_field.send_keys(self.password)
-        password_field.send_keys(Keys.RETURN)
-
-        session_token = None
-        start_time = time.time()
-
-        while True:
-            for request in driver.requests:
-                if "access_token" in request.path and request.response:
-                    body = json.loads(s=request.response.body)
-                    session_token = body.get("access_token")
-                    break
-            if session_token or time.time() - start_time > 30:
-                break
-            time.sleep(1)
-
-        if session_token:
             return self.session_token is not None
-        else:
-            _LOGGER.error("Access Token not found")
-
-        driver.quit()
+        except httpx.HTTPStatusError as e:
+            _LOGGER.error(f"Failed to login: {e}")
+            return False
+        except json.JSONDecodeError:
+            if response is not None:
+                _LOGGER.error(f"Failed to parse response as JSON: {response.content}")
+            else:
+                _LOGGER.error(
+                    "Failed to parse response as JSON, but no response was received"
+                )
+            return False
 
     async def get_total_consumption(self):
         return await self._get_data(
@@ -94,7 +71,11 @@ class FortumAPI:
         )
 
     async def _post(self, url, data):
-        headers = {"Authorization": f"Bearer {self.session_token}"}
+        headers = {
+            "X-Auth-System": "FR-CIAM",
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.session_token}",
+        }
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(url, headers=headers, json=data)

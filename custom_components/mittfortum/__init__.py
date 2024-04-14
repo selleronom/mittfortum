@@ -1,10 +1,11 @@
 """The MittFortum integration."""
+
 from __future__ import annotations
 
 import logging
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, Platform
+from homeassistant.const import CONF_USERNAME, Platform
 from homeassistant.core import HomeAssistant
 
 from .api import ConfigurationError, FortumAPI, LoginError  # Import the API class
@@ -20,7 +21,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Get the parameters from the config entry
     username = entry.data[CONF_USERNAME]
-    password = entry.data[CONF_PASSWORD]
     customer_id = entry.data["customer_id"]
     metering_point = entry.data["metering_point"]
     street_address = entry.data["street_address"]
@@ -30,7 +30,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Create API instance
         api = FortumAPI(
             username,
-            password,
             customer_id,
             metering_point,
             street_address,

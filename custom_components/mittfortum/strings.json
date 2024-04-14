@@ -3,8 +3,7 @@
     "step": {
       "user": {
         "data": {
-          "username": "Username for MittFortum",
-          "password": "Password for MittFortum",
+          "refresh_token": "Refresh token for MittFortum",
           "customer_id": "Your Customer ID",
           "metering_point": "Your Metering Point",
           "street_address": "Your Street Address",
