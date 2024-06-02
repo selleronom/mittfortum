@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_USERNAME, Platform
+from homeassistant.const import CONF_TOKEN, Platform
 from homeassistant.core import HomeAssistant
 
 from .api import ConfigurationError, FortumAPI, LoginError  # Import the API class
@@ -20,7 +20,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
 
     # Get the parameters from the config entry
-    username = entry.data[CONF_USERNAME]
+    refresh_token = entry.data[CONF_TOKEN]
     customer_id = entry.data["customer_id"]
     metering_point = entry.data["metering_point"]
     street_address = entry.data["street_address"]
@@ -29,15 +29,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     try:
         # Create API instance
         api = FortumAPI(
-            username,
+            refresh_token,
             customer_id,
             metering_point,
             street_address,
-            city,
+            city,            
         )
 
         # Validate the API connection (and authentication)
-        await api.login()
+        result = await api.login()
+        if result:
+            _LOGGER.info("Logged in to MittFortum")
+        else:
+            _LOGGER.info("Failed to log in to MittFortum")
+            
     except LoginError as e:
         _LOGGER.error("Failed to log in to MittFortum: %s", e)
         return False

@@ -8,7 +8,7 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.const import CONF_USERNAME
+from homeassistant.const import CONF_TOKEN
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
@@ -20,7 +20,7 @@ _LOGGER = logging.getLogger(__name__)
 
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
-        vol.Required(CONF_USERNAME): str,
+        vol.Required(CONF_TOKEN): str,
         vol.Required("customer_id"): str,
         vol.Required("metering_point"): str,
         vol.Required("street_address"): str,
@@ -51,7 +51,7 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
     """
     try:
         api = FortumAPI(
-            data[CONF_USERNAME],
+            data[CONF_TOKEN],
             data["customer_id"],
             data["metering_point"],
             data["street_address"],
@@ -68,7 +68,7 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
         _LOGGER.error("Failed to login: %s", e)
         raise CannotConnect(f"Failed to login: {e}") from e
 
-    return {"title": data[CONF_USERNAME]}
+    return {"title": data[CONF_TOKEN]}
 
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):

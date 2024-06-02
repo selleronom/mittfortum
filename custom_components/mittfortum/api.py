@@ -7,14 +7,14 @@ from datetime import datetime
 import httpx
 from httpx import HTTPStatusError
 
+from .const import LOGIN_URL, DATA_URL
+
 _LOGGER = logging.getLogger(__name__)
 
 
 class FortumAPI:
     """API client for interacting with the Fortum service."""
 
-    LOGIN_URL = "https://sso.fortum.com/am/oauth2/access_token"
-    DATA_URL = "https://retail-lisa-eu-prd-energyflux.herokuapp.com/api/consumption/customer/{customer_id}/meteringPoint/{metering_point}"
 
     def __init__(
         self,
@@ -24,7 +24,7 @@ class FortumAPI:
         street_address,
         city,
     ) -> None:
-        self.refresh_token = refresh_token
+        self.refresh_token
         self.customer_id = customer_id
         self.metering_point = metering_point
         self.street_address = street_address
@@ -42,7 +42,7 @@ class FortumAPI:
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    self.LOGIN_URL, data=payload, headers=headers
+                    LOGIN_URL, data=payload, headers=headers
                 )
             response.raise_for_status()
             self.session_token = response.json().get("access_token")
@@ -60,6 +60,9 @@ class FortumAPI:
                     "Failed to parse response as JSON, but no response was received"
                 )
             return False
+        except Exception as e:
+            _LOGGER.error(f"Exception: Failed to login: {e}")
+            raise
 
     async def get_total_consumption(self):
         return await self._get_data(
@@ -94,8 +97,11 @@ class FortumAPI:
                 )
             return response
         except HTTPStatusError as e:
-            _LOGGER.error(f"Failed to post data: {e}")
+            _LOGGER.error(f"HTTPStatusError: Failed to post data: {e}")
             return None
+        except Exception as e:
+            _LOGGER.error(f"Exception: Failed to post data: {e}")
+            raise
 
     async def _get_data(
         self,
@@ -109,7 +115,7 @@ class FortumAPI:
         from_date = str(current_year - 4) + "-01-01"
         to_date = str(current_year) + "-12-31"
 
-        url = self.DATA_URL.format(
+        url = DATA_URL.format(
             customer_id=customer_id, metering_point=metering_point
         )
         data = {

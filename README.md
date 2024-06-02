@@ -10,7 +10,7 @@ This is the main module for the MittFortum integration. This integration allows 
 
 ## Setup
 
-To set up this integration, you need to provide your MittFortum account details, including your username, password, customer ID, metering point, resolution, street address, and city. Once these details are provided, the integration will be set up and ready to use.
+To set up this integration, you need to provide your MittFortum account details, including your refresh_token, customer ID, metering point, resolution, street address, and city. Once these details are provided, the integration will be set up and ready to use.
 
 ## Usage
 
