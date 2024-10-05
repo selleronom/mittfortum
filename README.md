@@ -4,13 +4,13 @@ This is the main module for the MittFortum integration. This integration allows 
 
 ## Features
 
-- **Real-time energy usage monitoring**: Get real-time updates on your energy usage.
-- **Customer information**: Access your customer information directly from Home Assistant.
+- **Historic energy usage monitoring**: Get historic updates on your energy usage.
 - **Sensor platform**: The integration supports the sensor platform, allowing you to create sensors for different types of data.
 
 ## Setup
 
-To set up this integration, you need to provide your MittFortum account details, including your username, password, customer ID, metering point, resolution, street address, and city. Once these details are provided, the integration will be set up and ready to use.
+To set up this integration, you need to provide your MittFortum account details, including your username, password, customer ID, metering point, street address, and city. Once these details are provided, the integration will be set up and ready to use.
+
 
 ## Usage
 

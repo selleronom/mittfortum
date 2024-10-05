@@ -1,4 +1,5 @@
 """Sensor module contains the FortumSensor class for energy consumption."""
+
 from datetime import timedelta
 import logging
 
