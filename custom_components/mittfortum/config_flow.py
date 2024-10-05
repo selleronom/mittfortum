@@ -13,7 +13,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
 
-from .api import FortumAPI  # Import the API class
+from .api import FortumAPI
 from .oauth2_client import OAuth2Client
 from .const import DOMAIN
 
@@ -29,9 +29,6 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
         vol.Required("city"): str,
     }
 )
-
-
-from .oauth2_client import OAuth2Client
 
 
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:

@@ -1,4 +1,3 @@
-import httpx
 import os
 import base64
 import hashlib

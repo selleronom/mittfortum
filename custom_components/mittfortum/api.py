@@ -4,7 +4,6 @@ import json
 import logging
 from datetime import datetime
 
-import httpx
 from httpx import HTTPStatusError
 from .oauth2_client import OAuth2Client
 from homeassistant.helpers.httpx_client import get_async_client
