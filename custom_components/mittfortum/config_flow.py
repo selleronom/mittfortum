@@ -8,14 +8,14 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.const import CONF_USERNAME, CONF_PASSWORD
+from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
 
-from .api import FortumAPI
-from .oauth2_client import OAuth2Client
+from .api import FortumAPI  # Import the API class
 from .const import DOMAIN
+from .oauth2_client import OAuth2Client
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -37,33 +37,22 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
     Data has the keys from STEP_USER_DATA_SCHEMA with values provided by the user.
     """
     try:
-        oauth_client = OAuth2Client(
-            username=data[CONF_USERNAME], password=data[CONF_PASSWORD]
+        OAuth2Client(
+            username=data[CONF_USERNAME],
+            password=data[CONF_PASSWORD],
+            HomeAssistant=hass,
         )
-        api = FortumAPI(
-            oauth_client=oauth_client,
+        FortumAPI(
+            oauth_client=OAuth2Client,
             customer_id=data["customer_id"],
             metering_point=data["metering_point"],
             street_address=data["street_address"],
             city=data["city"],
+            HomeAssistant=hass,
         )
     except Exception as e:
         _LOGGER.error("Failed to create API: %s", e)
         raise CannotConnect(f"Failed to create API: {e}") from e
-
-    try:
-        if not await oauth_client.login():
-            raise InvalidAuth
-    except Exception as e:
-        _LOGGER.error("Failed to login: %s", e)
-        raise CannotConnect(f"Failed to login: {e}") from e
-
-    try:
-        if not await api.get_total_consumption():
-            raise InvalidAuth
-    except Exception as e:
-        _LOGGER.error("Failed to login: %s", e)
-        raise CannotConnect(f"Failed to login: {e}") from e
 
     return {"title": data["customer_id"]}
 

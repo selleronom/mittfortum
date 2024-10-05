@@ -1,11 +1,12 @@
-import os
 import base64
 import hashlib
 import hmac
-import uuid
-from urllib.parse import urlencode, urlparse, parse_qs
-from typing import Dict, Any, Optional
 import logging
+import os
+from typing import Any
+from urllib.parse import parse_qs, urlencode, urlparse
+import uuid
+
 from homeassistant.helpers.httpx_client import get_async_client
 
 _LOGGER = logging.getLogger(__name__)
@@ -13,8 +14,6 @@ _LOGGER = logging.getLogger(__name__)
 
 class OAuth2ClientError(Exception):
     """Custom exception for OAuth2Client errors."""
-
-    pass
 
 
 class OAuth2Client:
@@ -25,8 +24,8 @@ class OAuth2Client:
         client_id: str = "swedenmypagesprod",
         redirect_uri: str = "https://www.mittfortum.se",
         secret_key: str = "shared_secret",
-        username: Optional[str] = None,
-        password: Optional[str] = None,
+        username: str | None = None,
+        password: str | None = None,
         HomeAssistant=None,
     ):
         """Initialize the OAuth2Client."""
@@ -61,7 +60,7 @@ class OAuth2Client:
         return str(uuid.uuid4())
 
     async def construct_authorization_url(
-        self, config: Dict[str, Any], code_challenge: str, state: str
+        self, config: dict[str, Any], code_challenge: str, state: str
     ) -> str:
         """Construct the OAuth2 authorization URL."""
         authorization_endpoint = config.get("authorization_endpoint")
@@ -79,21 +78,20 @@ class OAuth2Client:
         }
         return f"{authorization_endpoint}?{urlencode(params)}"
 
-    async def fetch_openid_configuration(self) -> Dict[str, Any]:
+    async def fetch_openid_configuration(self) -> dict[str, Any]:
         """Fetch OpenID configuration from the provider."""
         openid_config_url = "https://sso.fortum.com/.well-known/openid-configuration"
         response = await self.session.get(openid_config_url)
 
         if response.status_code == 200:
             return response.json()
-        else:
-            raise OAuth2ClientError(
-                f"Failed to fetch OpenID configuration: {response.status_code}"
-            )
+        raise OAuth2ClientError(
+            f"Failed to fetch OpenID configuration: {response.status_code}"
+        )
 
     async def exchange_code_for_access_token(
         self, code: str, code_verifier: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Exchange authorization code for access token."""
         url = "https://sso.fortum.com/am/oauth2/access_token"
         payload = {
@@ -114,7 +112,7 @@ class OAuth2Client:
         self.refresh_token = tokens.get("refresh_token")
         return tokens
 
-    async def authenticate_user(self) -> Dict[str, Any]:
+    async def authenticate_user(self) -> dict[str, Any]:
         """Authenticate the user and return the login response."""
         initial_auth_url = "https://sso.fortum.com/am/json/realms/root/realms/alpha/authenticate?authIndexType=service&authIndexValue=SeB2CLogin"
 
@@ -140,7 +138,7 @@ class OAuth2Client:
                         {"name": "policies", "value": {}},
                         {"name": "failedPolicies", "value": []},
                         {"name": "validateOnly", "value": False},
-                        {"name": "value", "value": self.username},
+                        {"name": "value", "value": ""},
                     ],
                     "input": [
                         {"name": "IDToken1", "value": self.username},
@@ -161,12 +159,11 @@ class OAuth2Client:
 
         if login_response.status_code == 200:
             return login_response.json()
-        else:
-            raise OAuth2ClientError(
-                f"Login failed: {login_response.status_code} {login_response.text}"
-            )
+        raise OAuth2ClientError(
+            f"Login failed: {login_response.status_code} {login_response.text}"
+        )
 
-    async def perform_authenticated_action(self) -> Dict[str, Any]:
+    async def perform_authenticated_action(self) -> dict[str, Any]:
         """Perform an authenticated action."""
         headers = {"accept-api-version": "protocol=1.0,resource=2.0"}
         response = await self.session.post(
@@ -178,7 +175,7 @@ class OAuth2Client:
             raise OAuth2ClientError(f"Failed: {response.status_code} {response.text}")
         return response.json()
 
-    async def fetch_user_details(self, user_id: str) -> Dict[str, Any]:
+    async def fetch_user_details(self, user_id: str) -> dict[str, Any]:
         """Fetch details of an authenticated user."""
         user_details_url = (
             f"https://sso.fortum.com/am/json/realms/root/realms/alpha/users/{user_id}"
@@ -188,12 +185,11 @@ class OAuth2Client:
 
         if response.status_code == 200:
             return response.json()
-        else:
-            raise OAuth2ClientError(
-                f"Failed to fetch user details: {response.status_code} {response.text}"
-            )
+        raise OAuth2ClientError(
+            f"Failed to fetch user details: {response.status_code} {response.text}"
+        )
 
-    async def validate_goto(self, code_challenge: str, state: str) -> Dict[str, Any]:
+    async def validate_goto(self, code_challenge: str, state: str) -> dict[str, Any]:
         """Validate the 'goto' URL required during the authentication flow."""
         url = "https://sso.fortum.com/am/json/realms/root/realms/alpha/users?_action=validateGoto"
         scope = ["openid", "profile", "crmdata"]
@@ -217,10 +213,9 @@ class OAuth2Client:
 
         if response.status_code == 200:
             return response.json()
-        else:
-            raise OAuth2ClientError(
-                f"Failed to validate goto URL: {response.status_code} {response.text}"
-            )
+        raise OAuth2ClientError(
+            f"Failed to validate goto URL: {response.status_code} {response.text}"
+        )
 
     async def generate_acr_sig(self, code_verifier: str) -> str:
         """Generate an ACR signature."""
@@ -241,10 +236,9 @@ class OAuth2Client:
             for r in response.history:
                 location = r.headers.get("Location")
             return location
-        else:
-            raise OAuth2ClientError(
-                f"Failed to follow success URL: {response.status_code} {response.text}"
-            )
+        raise OAuth2ClientError(
+            f"Failed to follow success URL: {response.status_code} {response.text}"
+        )
 
     async def initiate_session(self, auth_url: str) -> None:
         """Initiate the session by navigating to the authorization URL."""
@@ -254,7 +248,7 @@ class OAuth2Client:
                 f"Failed to initiate session: {response.status_code} {response.text}"
             )
 
-    async def refresh_access_token(self) -> Dict[str, Any]:
+    async def refresh_access_token(self) -> dict[str, Any]:
         """Refresh the access token using the refresh token."""
         url = "https://sso.fortum.com/am/oauth2/access_token"
         payload = {
@@ -273,7 +267,7 @@ class OAuth2Client:
         self.refresh_token = tokens.get("refresh_token")
         return tokens
 
-    async def login(self) -> Dict[str, Any]:
+    async def login(self) -> dict[str, Any]:
         """Perform the OAuth2 login flow."""
         async with self:
             config = await self.fetch_openid_configuration()
@@ -308,7 +302,5 @@ class OAuth2Client:
                     )
                     self.session_token = tokens.get("access_token")
                     return tokens
-                else:
-                    raise OAuth2ClientError("No authorization code found in final URL.")
-            else:
-                raise OAuth2ClientError("No successURL found in validation response.")
+                raise OAuth2ClientError("No authorization code found in final URL.")
+            raise OAuth2ClientError("No successURL found in validation response.")

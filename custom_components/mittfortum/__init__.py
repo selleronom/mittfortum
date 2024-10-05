@@ -5,13 +5,12 @@ from __future__ import annotations
 import logging
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_USERNAME, CONF_PASSWORD, Platform
+from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, Platform
 from homeassistant.core import HomeAssistant
 
 from .api import ConfigurationError, FortumAPI, LoginError  # Import the API class
-from .oauth2_client import OAuth2Client
-
 from .const import DOMAIN
+from .oauth2_client import OAuth2Client
 
 _LOGGER = logging.getLogger(__name__)
 PLATFORMS: list[Platform] = [Platform.SENSOR]
