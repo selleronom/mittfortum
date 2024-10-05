@@ -1,52 +1,69 @@
-# oauth2_client.py
-
 import httpx
 import os
 import base64
 import hashlib
 import hmac
 import uuid
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse, parse_qs
+from typing import Dict, Any, Optional
+import logging
+from homeassistant.helpers.httpx_client import get_async_client
+
+_LOGGER = logging.getLogger(__name__)
+
+
+class OAuth2ClientError(Exception):
+    """Custom exception for OAuth2Client errors."""
+
+    pass
+
 
 class OAuth2Client:
     """Encapsulates OAuth2 authentication logic for Fortum's API."""
 
-    def __init__(self, client_id, redirect_uri, secret_key="shared_secret"):
+    def __init__(
+        self,
+        client_id: str = "swedenmypagesprod",
+        redirect_uri: str = "https://www.mittfortum.se",
+        secret_key: str = "shared_secret",
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+        HomeAssistant=None,
+    ):
         """Initialize the OAuth2Client."""
         self.client_id = client_id
         self.redirect_uri = redirect_uri
         self.secret_key = secret_key
-        self.session = httpx.Client(follow_redirects=True)
-        
-    def fetch_openid_configuration(self):
-        """Fetch OpenID configuration from the provider."""
-        openid_config_url = "https://sso.fortum.com/.well-known/openid-configuration"
-        response = self.session.get(openid_config_url)
+        self.username = username
+        self.password = password
+        self.session_token = None
+        self.refresh_token = None
+        self.session = None
+        self.hass = HomeAssistant
 
-        if response.status_code == 200:
-            return response.json()
-        else:
-            raise Exception(f"Failed to fetch OpenID configuration: {response.status_code}")
+    async def __aenter__(self):
+        self.session = get_async_client(self.hass)
+        return self
 
-    def generate_code_verifier(self, length=128):
+    async def __aexit__(self, exc_type, exc, tb):
+        pass
+
+    async def generate_code_verifier(self, length: int = 128) -> str:
         """Generate a secure code verifier."""
-        if not 43 <= length <= 128:
-            raise ValueError("Length must be between 43 and 128 characters.")
-        random_bytes = os.urandom(length)
-        code_verifier = base64.urlsafe_b64encode(random_bytes).decode("utf-8").rstrip("=")
-        return code_verifier[:length]
+        return base64.urlsafe_b64encode(os.urandom(length)).decode("utf-8").rstrip("=")
 
-    def generate_code_challenge(self, code_verifier):
+    async def generate_code_challenge(self, code_verifier: str) -> str:
         """Generate a code challenge based on the verifier."""
-        verifier_bytes = code_verifier.encode("utf-8")
-        sha256_hash = hashlib.sha256(verifier_bytes).digest()
-        return base64.urlsafe_b64encode(sha256_hash).decode("utf-8").rstrip("=")
+        code_challenge = hashlib.sha256(code_verifier.encode("utf-8")).digest()
+        return base64.urlsafe_b64encode(code_challenge).decode("utf-8").rstrip("=")
 
-    def generate_state(self):
+    async def generate_state(self) -> str:
         """Generate a random state parameter for the auth request."""
         return str(uuid.uuid4())
 
-    def construct_authorization_url(self, config, code_challenge, state):
+    async def construct_authorization_url(
+        self, config: Dict[str, Any], code_challenge: str, state: str
+    ) -> str:
         """Construct the OAuth2 authorization URL."""
         authorization_endpoint = config.get("authorization_endpoint")
         scope = ["openid", "profile", "crmdata"]
@@ -63,22 +80,54 @@ class OAuth2Client:
         }
         return f"{authorization_endpoint}?{urlencode(params)}"
 
-    def initiate_session(self, auth_url):
-        """Initiate an OAuth session."""
-        response = self.session.get(auth_url)
-        if response.status_code != 200:
-            raise Exception(f"Failed to access authorization URL: {response.status_code}")
+    async def fetch_openid_configuration(self) -> Dict[str, Any]:
+        """Fetch OpenID configuration from the provider."""
+        openid_config_url = "https://sso.fortum.com/.well-known/openid-configuration"
+        response = await self.session.get(openid_config_url)
 
-    def authenticate_user(self, username, password):
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise OAuth2ClientError(
+                f"Failed to fetch OpenID configuration: {response.status_code}"
+            )
+
+    async def exchange_code_for_access_token(
+        self, code: str, code_verifier: str
+    ) -> Dict[str, Any]:
+        """Exchange authorization code for access token."""
+        url = "https://sso.fortum.com/am/oauth2/access_token"
+        payload = {
+            "grant_type": "authorization_code",
+            "redirect_uri": self.redirect_uri,
+            "code": code,
+            "code_verifier": code_verifier,
+            "client_id": self.client_id,
+        }
+
+        response = await self.session.post(url, data=payload)
+        if response.status_code != 200:
+            raise OAuth2ClientError(
+                f"Failed to exchange code for access token: {response.status_code} {response.text}"
+            )
+        tokens = response.json()
+        self.session_token = tokens.get("access_token")
+        self.refresh_token = tokens.get("refresh_token")
+        return tokens
+
+    async def authenticate_user(self) -> Dict[str, Any]:
         """Authenticate the user and return the login response."""
         initial_auth_url = "https://sso.fortum.com/am/json/realms/root/realms/alpha/authenticate?authIndexType=service&authIndexValue=SeB2CLogin"
 
-        response = self.session.post(initial_auth_url)
-        if response.status_code != 200:
-            raise Exception(f"Failed to initiate authentication: {response.status_code}")
+        response = await self.session.post(initial_auth_url)
 
-        response_data = response.json()
-        auth_id = response_data.get("authId")
+        if response.status_code == 200:
+            response_data = response.json()
+            auth_id = response_data.get("authId")
+        else:
+            raise OAuth2ClientError(
+                f"Failed to initiate authentication: {response.status_code} {response.text}"
+            )
 
         login_payload = {
             "authId": auth_id,
@@ -92,10 +141,10 @@ class OAuth2Client:
                         {"name": "policies", "value": {}},
                         {"name": "failedPolicies", "value": []},
                         {"name": "validateOnly", "value": False},
-                        {"name": "value", "value": ""},
+                        {"name": "value", "value": self.username},
                     ],
                     "input": [
-                        {"name": "IDToken1", "value": username},
+                        {"name": "IDToken1", "value": self.username},
                         {"name": "IDToken1validateOnly", "value": False},
                     ],
                     "_id": 0,
@@ -103,64 +152,49 @@ class OAuth2Client:
                 {
                     "type": "PasswordCallback",
                     "output": [{"name": "prompt", "value": "Password"}],
-                    "input": [{"name": "IDToken2", "value": password}],
+                    "input": [{"name": "IDToken2", "value": self.password}],
                     "_id": 1,
                 },
             ],
         }
 
-        login_response = self.session.post(initial_auth_url, json=login_payload)
-        if login_response.status_code != 200:
-            raise Exception(f"Login failed: {login_response.status_code} {login_response.text}")
+        login_response = await self.session.post(initial_auth_url, json=login_payload)
 
-        return login_response
+        if login_response.status_code == 200:
+            return login_response.json()
+        else:
+            raise OAuth2ClientError(
+                f"Login failed: {login_response.status_code} {login_response.text}"
+            )
 
-    def perform_authenticated_action(self):
+    async def perform_authenticated_action(self) -> Dict[str, Any]:
         """Perform an authenticated action."""
         headers = {"accept-api-version": "protocol=1.0,resource=2.0"}
-        response = self.session.post("https://sso.fortum.com/am/json/users?_action=idFromSession", headers=headers, json={})
+        response = await self.session.post(
+            "https://sso.fortum.com/am/json/users?_action=idFromSession",
+            headers=headers,
+            json={},
+        )
         if response.status_code != 200:
-            raise Exception(f"Failed: {response.status_code} {response.text}")
+            raise OAuth2ClientError(f"Failed: {response.status_code} {response.text}")
         return response.json()
 
-    def follow_success_url(self, success_url, acr_sig):
-        """Follow the success URL from the authentication flow."""
-        if "?" in success_url:
-            success_url += f"&acr_sig={acr_sig}"
+    async def fetch_user_details(self, user_id: str) -> Dict[str, Any]:
+        """Fetch details of an authenticated user."""
+        user_details_url = (
+            f"https://sso.fortum.com/am/json/realms/root/realms/alpha/users/{user_id}"
+        )
+
+        response = await self.session.get(user_details_url)
+
+        if response.status_code == 200:
+            return response.json()
         else:
-            success_url += f"?acr_sig={acr_sig}"
+            raise OAuth2ClientError(
+                f"Failed to fetch user details: {response.status_code} {response.text}"
+            )
 
-        response = self.session.get(success_url)
-        if response.status_code != 200:
-            raise Exception(f"Failed to follow successURL: {response.status_code} {response.text}")
-
-        # Extract and return the redirect location
-        for r in response.history:
-            location = r.headers.get("Location")
-            if location: return location
-
-    def exchange_code_for_access_token(self, code, code_verifier):
-        """Exchange authorization code for access token."""
-        url = "https://sso.fortum.com/am/oauth2/access_token"
-        payload = {
-            "grant_type": "authorization_code",
-            "redirect_uri": self.redirect_uri,
-            "code": code,
-            "code_verifier": code_verifier,
-            "client_id": self.client_id,
-        }
-
-        response = self.session.post(url, data=payload)
-        if response.status_code != 200:
-            raise Exception(f"Failed to exchange code for access token: {response.status_code} {response.text}")
-        return response.json()
-
-    def generate_acr_sig(self, code_verifier):
-        """Generate an ACR signature."""
-        hmac_obj = hmac.new(self.secret_key.encode("utf-8"), msg=code_verifier.encode("utf-8"), digestmod=hashlib.sha256)
-        return base64.urlsafe_b64encode(hmac_obj.digest()).decode("utf-8").rstrip("=")
-
-    def validate_goto(self, code_challenge, state):
+    async def validate_goto(self, code_challenge: str, state: str) -> Dict[str, Any]:
         """Validate the 'goto' URL required during the authentication flow."""
         url = "https://sso.fortum.com/am/json/realms/root/realms/alpha/users?_action=validateGoto"
         scope = ["openid", "profile", "crmdata"]
@@ -180,22 +214,102 @@ class OAuth2Client:
             "accept-api-version": "protocol=2.1,resource=3.0",
         }
 
-        response = self.session.post(url, headers=headers, json=payload)
+        response = await self.session.post(url, headers=headers, json=payload)
 
         if response.status_code == 200:
             return response.json()
         else:
-            raise Exception(f"Failed to validate goto URL: {response.status_code} {response.text}")
+            raise OAuth2ClientError(
+                f"Failed to validate goto URL: {response.status_code} {response.text}"
+            )
 
-    def fetch_user_details(self, user_id):
-        """Fetch details of an authenticated user."""
-        user_details_url = (
-            f"https://sso.fortum.com/am/json/realms/root/realms/alpha/users/{user_id}"
+    async def generate_acr_sig(self, code_verifier: str) -> str:
+        """Generate an ACR signature."""
+        hmac_obj = hmac.new(
+            self.secret_key.encode("utf-8"),
+            msg=code_verifier.encode("utf-8"),
+            digestmod=hashlib.sha256,
         )
+        return base64.urlsafe_b64encode(hmac_obj.digest()).decode("utf-8").rstrip("=")
 
-        response = self.session.get(user_details_url)
-
+    async def follow_success_url(self, success_url: str, acr_sig: str) -> str:
+        """Follow the success URL from the authentication flow."""
+        response = await self.session.get(
+            f"{success_url}&acr_sig={acr_sig}", follow_redirects=True
+        )
         if response.status_code == 200:
-            return response.json()
+            location = None
+            for r in response.history:
+                location = r.headers.get("Location")
+            return location
         else:
-            raise Exception(f"Failed to fetch user details: {response.status_code} {response.text}")
+            raise OAuth2ClientError(
+                f"Failed to follow success URL: {response.status_code} {response.text}"
+            )
+
+    async def initiate_session(self, auth_url: str) -> None:
+        """Initiate the session by navigating to the authorization URL."""
+        response = await self.session.get(auth_url, follow_redirects=True)
+        if response.status_code != 200:
+            raise OAuth2ClientError(
+                f"Failed to initiate session: {response.status_code} {response.text}"
+            )
+
+    async def refresh_access_token(self) -> Dict[str, Any]:
+        """Refresh the access token using the refresh token."""
+        url = "https://sso.fortum.com/am/oauth2/access_token"
+        payload = {
+            "grant_type": "refresh_token",
+            "refresh_token": self.refresh_token,
+            "client_id": self.client_id,
+        }
+
+        response = await self.session.post(url, data=payload)
+        if response.status_code != 200:
+            raise OAuth2ClientError(
+                f"Failed to refresh access token: {response.status_code} {response.text}"
+            )
+        tokens = response.json()
+        self.session_token = tokens.get("access_token")
+        self.refresh_token = tokens.get("refresh_token")
+        return tokens
+
+    async def login(self) -> Dict[str, Any]:
+        """Perform the OAuth2 login flow."""
+        async with self:
+            config = await self.fetch_openid_configuration()
+            code_verifier = await self.generate_code_verifier()
+            code_challenge = await self.generate_code_challenge(code_verifier)
+            state = await self.generate_state()
+
+            auth_url = await self.construct_authorization_url(
+                config, code_challenge, state
+            )
+            await self.initiate_session(auth_url)
+
+            await self.authenticate_user()
+
+            user_id = await self.perform_authenticated_action()
+            await self.fetch_user_details(user_id["id"])
+
+            goto_url = await self.validate_goto(code_challenge, state)
+
+            success_url = goto_url.get("successURL")
+            if success_url:
+                acr_sig = await self.generate_acr_sig(code_verifier)
+                final_url = await self.follow_success_url(success_url, acr_sig)
+
+                parsed_url = urlparse(final_url)
+
+                code = parse_qs(parsed_url.query).get("code", [None])[0]
+
+                if code:
+                    tokens = await self.exchange_code_for_access_token(
+                        code, code_verifier
+                    )
+                    self.session_token = tokens.get("access_token")
+                    return tokens
+                else:
+                    raise OAuth2ClientError("No authorization code found in final URL.")
+            else:
+                raise OAuth2ClientError("No successURL found in validation response.")

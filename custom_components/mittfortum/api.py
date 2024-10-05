@@ -6,6 +6,8 @@ from datetime import datetime
 
 import httpx
 from httpx import HTTPStatusError
+from .oauth2_client import OAuth2Client
+from homeassistant.helpers.httpx_client import get_async_client
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -13,53 +15,23 @@ _LOGGER = logging.getLogger(__name__)
 class FortumAPI:
     """API client for interacting with the Fortum service."""
 
-    LOGIN_URL = "https://sso.fortum.com/am/oauth2/access_token"
     DATA_URL = "https://retail-lisa-eu-prd-energyflux.herokuapp.com/api/consumption/customer/{customer_id}/meteringPoint/{metering_point}"
 
     def __init__(
         self,
-        refresh_token,
-        customer_id,
-        metering_point,
-        street_address,
-        city,
+        oauth_client: OAuth2Client,
+        customer_id: str,
+        metering_point: str,
+        street_address: str,
+        city: str,
+        HomeAssistant=None,
     ) -> None:
-        self.refresh_token = refresh_token
+        self.oauth_client = oauth_client
         self.customer_id = customer_id
         self.metering_point = metering_point
         self.street_address = street_address
         self.city = city
-        self.session_token = None
-
-    async def login(self):
-        headers = {"Content-Type": "application/x-www-form-urlencoded"}
-        payload = {
-            "grant_type": "refresh_token",
-            "refresh_token": self.refresh_token,
-            "client_id": "swedenmypagesprod",
-        }
-        response = None
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    self.LOGIN_URL, data=payload, headers=headers
-                )
-            response.raise_for_status()
-            self.session_token = response.json().get("access_token")
-            self.refresh_token = response.json().get("refresh_token")
-
-            return self.session_token is not None
-        except httpx.HTTPStatusError as e:
-            _LOGGER.error(f"Failed to login: {e}")
-            return False
-        except json.JSONDecodeError:
-            if response is not None:
-                _LOGGER.error(f"Failed to parse response as JSON: {response.content}")
-            else:
-                _LOGGER.error(
-                    "Failed to parse response as JSON, but no response was received"
-                )
-            return False
+        self.hass = HomeAssistant
 
     async def get_total_consumption(self):
         return await self._get_data(
@@ -74,16 +46,16 @@ class FortumAPI:
         headers = {
             "X-Auth-System": "FR-CIAM",
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.session_token}",
+            "Authorization": f"Bearer {self.oauth_client.session_token}",
         }
         try:
-            async with httpx.AsyncClient() as client:
+            async with get_async_client(self.hass) as client:
                 response = await client.post(url, headers=headers, json=data)
             if response.status_code == 403:
                 _LOGGER.info("Session expired, renewing login")
-                if not await self.login():
+                if not await self.oauth_client.login():
                     raise Exception("Failed to renew login")
-                headers = {"Authorization": f"Bearer {self.session_token}"}
+                headers["Authorization"] = f"Bearer {self.oauth_client.session_token}"
                 response = await client.post(url, headers=headers, json=data)
             elif response.status_code != 200:
                 _LOGGER.error(
@@ -98,12 +70,7 @@ class FortumAPI:
             return None
 
     async def _get_data(
-        self,
-        customer_id,
-        metering_point,
-        resolution,
-        street_address,
-        city,
+        self, customer_id, metering_point, resolution, street_address, city
     ):
         current_year = datetime.now().year
         from_date = str(current_year - 4) + "-01-01"

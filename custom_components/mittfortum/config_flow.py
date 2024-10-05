@@ -8,12 +8,13 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.const import CONF_USERNAME
+from homeassistant.const import CONF_USERNAME, CONF_PASSWORD
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
 
 from .api import FortumAPI  # Import the API class
+from .oauth2_client import OAuth2Client
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -21,6 +22,7 @@ _LOGGER = logging.getLogger(__name__)
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_USERNAME): str,
+        vol.Required(CONF_PASSWORD): str,
         vol.Required("customer_id"): str,
         vol.Required("metering_point"): str,
         vol.Required("street_address"): str,
@@ -29,19 +31,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 )
 
 
-class PlaceholderHub:
-    """Placeholder class to make tests pass.
-
-    TODO Remove this placeholder class and replace with things from your PyPI package.
-    """
-
-    def __init__(self, host: str) -> None:
-        """Initialize."""
-        self.host = host
-
-    async def authenticate(self, username: str, password: str) -> bool:
-        """Test if we can authenticate with the host."""
-        return True
+from .oauth2_client import OAuth2Client
 
 
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
@@ -50,25 +40,35 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
     Data has the keys from STEP_USER_DATA_SCHEMA with values provided by the user.
     """
     try:
+        oauth_client = OAuth2Client(
+            username=data[CONF_USERNAME], password=data[CONF_PASSWORD]
+        )
         api = FortumAPI(
-            data[CONF_USERNAME],
-            data["customer_id"],
-            data["metering_point"],
-            data["street_address"],
-            data["city"],
+            oauth_client=oauth_client,
+            customer_id=data["customer_id"],
+            metering_point=data["metering_point"],
+            street_address=data["street_address"],
+            city=data["city"],
         )
     except Exception as e:
         _LOGGER.error("Failed to create API: %s", e)
         raise CannotConnect(f"Failed to create API: {e}") from e
 
     try:
-        if not await api.login():
+        if not await oauth_client.login():
             raise InvalidAuth
     except Exception as e:
         _LOGGER.error("Failed to login: %s", e)
         raise CannotConnect(f"Failed to login: {e}") from e
 
-    return {"title": data[CONF_USERNAME]}
+    try:
+        if not await api.get_total_consumption():
+            raise InvalidAuth
+    except Exception as e:
+        _LOGGER.error("Failed to login: %s", e)
+        raise CannotConnect(f"Failed to login: {e}") from e
+
+    return {"title": data["customer_id"]}
 
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
