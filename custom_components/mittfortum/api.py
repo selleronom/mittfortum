@@ -1,12 +1,14 @@
 """Module for interacting with the Fortum service API."""
 
+from datetime import datetime
 import json
 import logging
-from datetime import datetime
 
 from httpx import HTTPStatusError
-from .oauth2_client import OAuth2Client
+
 from homeassistant.helpers.httpx_client import get_async_client
+
+from .oauth2_client import OAuth2Client
 
 _LOGGER = logging.getLogger(__name__)
 
