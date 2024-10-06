@@ -44,6 +44,9 @@ class FortumAPI:
         )
 
     async def _post(self, url, data):
+        if self.oauth_client.is_token_expired():
+            await self.oauth_client.refresh_access_token()
+
         headers = {
             "X-Auth-System": "FR-CIAM",
             "Content-Type": "application/json",
