@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import logging
 import os
+import time
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse
 import uuid
@@ -21,11 +22,11 @@ class OAuth2Client:
 
     def __init__(
         self,
-        client_id: str = "swedenmypagesprod",
-        redirect_uri: str = "https://www.mittfortum.se",
-        secret_key: str = "shared_secret",
-        username: str | None = None,
-        password: str | None = None,
+        client_id="swedenmypagesprod",
+        redirect_uri="https://www.mittfortum.se",
+        secret_key="shared_secret",
+        username=None,
+        password=None,
         HomeAssistant=None,
     ):
         """Initialize the OAuth2Client."""
@@ -36,6 +37,7 @@ class OAuth2Client:
         self.password = password
         self.session_token = None
         self.refresh_token = None
+        self.token_expiry = None
         self.session = None
         self.hass = HomeAssistant
 
@@ -248,16 +250,21 @@ class OAuth2Client:
                 f"Failed to initiate session: {response.status_code} {response.text}"
             )
 
+    def is_token_expired(self):
+        """Check if the session token is expired."""
+        return self.token_expiry is None or time.time() > self.token_expiry
+
     async def refresh_access_token(self) -> dict[str, Any]:
         """Refresh the access token using the refresh token."""
         url = "https://sso.fortum.com/am/oauth2/access_token"
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
         payload = {
             "grant_type": "refresh_token",
             "refresh_token": self.refresh_token,
             "client_id": self.client_id,
         }
 
-        response = await self.session.post(url, data=payload)
+        response = await self.session.post(url, data=payload, headers=headers)
         if response.status_code != 200:
             raise OAuth2ClientError(
                 f"Failed to refresh access token: {response.status_code} {response.text}"
@@ -265,6 +272,7 @@ class OAuth2Client:
         tokens = response.json()
         self.session_token = tokens.get("access_token")
         self.refresh_token = tokens.get("refresh_token")
+        self.token_expiry = time.time() + tokens["expires_in"]
         return tokens
 
     async def login(self) -> dict[str, Any]:
@@ -301,6 +309,8 @@ class OAuth2Client:
                         code, code_verifier
                     )
                     self.session_token = tokens.get("access_token")
+                    self.refresh_token = tokens.get("refresh_token")
+                    self.token_expiry = time.time() + tokens["expires_in"]
                     return tokens
                 raise OAuth2ClientError("No authorization code found in final URL.")
             raise OAuth2ClientError("No successURL found in validation response.")
