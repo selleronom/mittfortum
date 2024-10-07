@@ -2,6 +2,14 @@
 
 This is the main module for the MittFortum integration. This integration allows you to connect your MittFortum account with Home Assistant, enabling you to monitor and control your energy usage directly from your Home Assistant dashboard.
 
+## Roadmap
+- [x] Username and password in config flow
+- [ ] Automatically fetch and store user information in config flow
+- [ ] Historic hourly energy usage for the recorder
+- [ ] Offical Home Assistant integration
+
+
+
 ## Features
 
 - **Historic energy usage monitoring**: Get historic updates on your energy usage.
