@@ -10,15 +10,13 @@ from httpx import HTTPStatusError
 from homeassistant.helpers.httpx_client import get_async_client
 
 from .oauth2_client import OAuth2Client
-from .const import BASE_URL, CONSUMPTION_URL, CUSTOMER_URL, DELIVERYSITES_URL
+from .const import CONSUMPTION_URL, CUSTOMER_URL, DELIVERYSITES_URL
 
 _LOGGER = logging.getLogger(__name__)
 
 
 class FortumAPI:
     """API client for interacting with the Fortum service."""
-
-    DATA_URL = "https://retail-lisa-eu-prd-energyflux.herokuapp.com/api/consumption/customer/{customer_id}/meteringPoint/{metering_point}"
 
     def __init__(
         self,
@@ -94,7 +92,7 @@ class FortumAPI:
         from_date = str(current_year - 4) + "-01-01"
         to_date = str(current_year) + "-12-31"
 
-        url = self.DATA_URL.format(
+        consumption_url = CONSUMPTION_URL.format(
             customer_id=customer_id, metering_point=metering_point
         )
         data = {
@@ -104,7 +102,7 @@ class FortumAPI:
             "postalAddress": street_address,
             "postOffice": city,
         }
-        response = await self._post(url, data)
+        response = await self._post(consumption_url, data)
         if response is None or not response.text:
             _LOGGER.error("Empty response from API")
             raise InvalidResponse("Empty response from API")
@@ -115,21 +113,19 @@ class FortumAPI:
             raise InvalidResponse("Invalid JSON in response") from e
 
     async def get_total_consumption(self):
-        if not self.customer_id:
-            self.customer_id = await self.get_customer_id()
-
-        customer_details = await self.get_customer_details(self.customer_id)
-        metering_points = await self.get_metering_points(self.customer_id)
+        customer_id = await self.get_customer_id()
+        customer_details = await self.get_customer_details(customer_id)
+        metering_points = await self.get_metering_points(customer_id)
 
         if not metering_points:
             raise Exception("No metering points found for the customer")
 
-        metering_point = metering_points[0]["meteringPointId"]
+        metering_point = metering_points[0]["meteringPointNo"]
         street_address = customer_details["postalAddress"]
         city = customer_details["postOffice"]
 
         return await self._get_data(
-            self.customer_id,
+            customer_id,
             metering_point,
             "yearly",
             street_address,
@@ -138,8 +134,7 @@ class FortumAPI:
 
     async def get_customer_id(self) -> str:
         """Retrieve the customer ID from the id_token."""
-        tokens = await self.oauth_client.login()
-        id_token = tokens.get("id_token")
+        id_token = self.oauth_client.id_token
         if not id_token:
             raise Exception("Failed to retrieve id_token")
 
@@ -155,7 +150,7 @@ class FortumAPI:
 
     async def get_customer_details(self, customer_id: str) -> Dict[str, Any]:
         """Fetch customer details using the customer_id."""
-        customer_details_url = f"https://retail-lisa-eu-prd-customersrv.herokuapp.com/api/customer/{customer_id}"
+        customer_details_url = CUSTOMER_URL.format(customer_id=customer_id)
         response = await self._get(customer_details_url)
 
         if response and response.status_code == 200:
@@ -166,7 +161,7 @@ class FortumAPI:
 
     async def get_metering_points(self, customer_id: str) -> List[Dict[str, Any]]:
         """Fetch metering points using the customer_id."""
-        metering_points_url = f"https://retail-lisa-eu-prd-customersrv.herokuapp.com/api/deliverysites/{customer_id}"
+        metering_points_url = DELIVERYSITES_URL.format(customer_id=customer_id)
         response = await self._get(metering_points_url)
 
         if response and response.status_code == 200:
