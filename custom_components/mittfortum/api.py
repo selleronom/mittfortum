@@ -4,6 +4,7 @@ from datetime import datetime
 import json
 import logging
 
+from typing import Any, Dict, List
 from httpx import HTTPStatusError
 
 from homeassistant.helpers.httpx_client import get_async_client
@@ -57,6 +58,35 @@ class FortumAPI:
             _LOGGER.error(f"Failed to post data: {e}")
             return None
 
+    async def _get(self, url):
+        if self.oauth_client.is_token_expired():
+            await self.oauth_client.refresh_access_token()
+
+        headers = {
+            "X-Auth-System": "FR-CIAM",
+            "Authorization": f"Bearer {self.oauth_client.session_token}",
+        }
+        try:
+            async with get_async_client(self.hass) as client:
+                response = await client.get(url, headers=headers)
+            if response.status_code == 403:
+                _LOGGER.info("Session expired, renewing login")
+                if not await self.oauth_client.login():
+                    raise Exception("Failed to renew login")
+                headers["Authorization"] = f"Bearer {self.oauth_client.session_token}"
+                response = await client.get(url, headers=headers)
+            elif response.status_code != 200:
+                _LOGGER.error(
+                    "Unexpected status code %s from API", response.status_code
+                )
+                raise UnexpectedStatusCode(
+                    f"Unexpected status code {response.status_code} from API"
+                )
+            return response
+        except HTTPStatusError as e:
+            _LOGGER.error(f"Failed to get data: {e}")
+            return None
+
     async def _get_data(
         self, customer_id, metering_point, resolution, street_address, city
     ):
@@ -87,12 +117,23 @@ class FortumAPI:
     async def get_total_consumption(self):
         if not self.customer_id:
             self.customer_id = await self.get_customer_id()
+
+        customer_details = await self.get_customer_details(self.customer_id)
+        metering_points = await self.get_metering_points(self.customer_id)
+
+        if not metering_points:
+            raise Exception("No metering points found for the customer")
+
+        metering_point = metering_points[0]["meteringPointId"]
+        street_address = customer_details["postalAddress"]
+        city = customer_details["postOffice"]
+
         return await self._get_data(
             self.customer_id,
-            self.metering_point,
+            metering_point,
             "yearly",
-            self.street_address,
-            self.city,
+            street_address,
+            city,
         )
 
     async def get_customer_id(self) -> str:
@@ -102,18 +143,38 @@ class FortumAPI:
         if not id_token:
             raise Exception("Failed to retrieve id_token")
 
-        # Extract customer_id from id_token (assuming it's in the payload)
         customer_id = self._extract_crmid_from_id_token(id_token)
         return customer_id
 
     def _extract_crmid_from_id_token(self, id_token: str) -> str:
         """Extract customer_id from id_token."""
-        # Decode the id_token and extract customer_id
-        # This is a simplified example; you might need to decode the JWT properly
         import jwt
 
         payload = jwt.decode(id_token, options={"verify_signature": False})
-        return payload['customerid'][0]['crmid']
+        return payload["customerid"][0]["crmid"]
+
+    async def get_customer_details(self, customer_id: str) -> Dict[str, Any]:
+        """Fetch customer details using the customer_id."""
+        customer_details_url = f"https://retail-lisa-eu-prd-customersrv.herokuapp.com/api/customer/{customer_id}"
+        response = await self._get(customer_details_url)
+
+        if response and response.status_code == 200:
+            return response.json()
+        raise Exception(
+            f"Failed to fetch customer details: {response.status_code} {response.text}"
+        )
+
+    async def get_metering_points(self, customer_id: str) -> List[Dict[str, Any]]:
+        """Fetch metering points using the customer_id."""
+        metering_points_url = f"https://retail-lisa-eu-prd-customersrv.herokuapp.com/api/deliverysites/{customer_id}"
+        response = await self._get(metering_points_url)
+
+        if response and response.status_code == 200:
+            return response.json()
+        raise Exception(
+            f"Failed to fetch metering points: {response.status_code} {response.text}"
+        )
+
 
 class APIError(Exception):
     """Raised when there's an error related to the API."""

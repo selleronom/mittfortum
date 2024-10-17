@@ -23,10 +23,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Get the parameters from the config entry
     username = entry.data[CONF_USERNAME]
     password = entry.data[CONF_PASSWORD]
-    customer_id = entry.data["customer_id"]
-    metering_point = entry.data["metering_point"]
-    street_address = entry.data["street_address"]
-    city = entry.data["city"]
 
     try:
         # Initialize OAuth2Client
@@ -39,10 +35,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Create API instance
         api = FortumAPI(
             oauth_client=oauth_client,
-            customer_id=customer_id,
-            metering_point=metering_point,
-            street_address=street_address,
-            city=city,
             HomeAssistant=hass,
         )
 
