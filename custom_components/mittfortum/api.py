@@ -9,6 +9,7 @@ from httpx import HTTPStatusError
 from homeassistant.helpers.httpx_client import get_async_client
 
 from .oauth2_client import OAuth2Client
+from .const import BASE_URL, CONSUMPTION_URL, CUSTOMER_URL, DELIVERYSITES_URL
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -84,6 +85,8 @@ class FortumAPI:
             raise InvalidResponse("Invalid JSON in response") from e
 
     async def get_total_consumption(self):
+        if not self.customer_id:
+            self.customer_id = await self.get_customer_id()
         return await self._get_data(
             self.customer_id,
             self.metering_point,
