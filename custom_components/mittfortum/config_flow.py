@@ -46,7 +46,7 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
         _LOGGER.error("Failed to create API: %s", e)
         raise CannotConnect(f"Failed to create API: {e}") from e
 
-    return {"title": data["customer_id"]}
+    return {"title": data[CONF_USERNAME]}
 
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
