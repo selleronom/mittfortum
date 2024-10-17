@@ -37,6 +37,7 @@ class OAuth2Client:
         self.password = password
         self.session_token = None
         self.refresh_token = None
+        self.id_token = None
         self.token_expiry = None
         self.session = None
         self.hass = HomeAssistant
@@ -310,6 +311,7 @@ class OAuth2Client:
                     )
                     self.session_token = tokens.get("access_token")
                     self.refresh_token = tokens.get("refresh_token")
+                    self.id_token = tokens.get("id_token")
                     self.token_expiry = time.time() + tokens["expires_in"]
                     return tokens
                 raise OAuth2ClientError("No authorization code found in final URL.")
