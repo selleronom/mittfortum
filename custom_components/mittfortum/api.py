@@ -21,27 +21,10 @@ class FortumAPI:
     def __init__(
         self,
         oauth_client: OAuth2Client,
-        customer_id: str,
-        metering_point: str,
-        street_address: str,
-        city: str,
         HomeAssistant=None,
     ) -> None:
         self.oauth_client = oauth_client
-        self.customer_id = customer_id
-        self.metering_point = metering_point
-        self.street_address = street_address
-        self.city = city
         self.hass = HomeAssistant
-
-    async def get_total_consumption(self):
-        return await self._get_data(
-            self.customer_id,
-            self.metering_point,
-            "yearly",
-            self.street_address,
-            self.city,
-        )
 
     async def _post(self, url, data):
         if self.oauth_client.is_token_expired():
@@ -100,6 +83,34 @@ class FortumAPI:
             _LOGGER.error(f"Invalid JSON in response: {response.text}")
             raise InvalidResponse("Invalid JSON in response") from e
 
+    async def get_total_consumption(self):
+        return await self._get_data(
+            self.customer_id,
+            self.metering_point,
+            "yearly",
+            self.street_address,
+            self.city,
+        )
+
+    async def get_customer_id(self) -> str:
+        """Retrieve the customer ID from the id_token."""
+        tokens = await self.oauth_client.login()
+        id_token = tokens.get("id_token")
+        if not id_token:
+            raise Exception("Failed to retrieve id_token")
+
+        # Extract customer_id from id_token (assuming it's in the payload)
+        customer_id = self._extract_crmid_from_id_token(id_token)
+        return customer_id
+
+    def _extract_crmid_from_id_token(self, id_token: str) -> str:
+        """Extract customer_id from id_token."""
+        # Decode the id_token and extract customer_id
+        # This is a simplified example; you might need to decode the JWT properly
+        import jwt
+
+        payload = jwt.decode(id_token, options={"verify_signature": False})
+        return payload['customerid'][0]['crmid']
 
 class APIError(Exception):
     """Raised when there's an error related to the API."""
