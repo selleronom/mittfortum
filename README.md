@@ -4,7 +4,7 @@ This is the main module for the MittFortum integration. This integration allows 
 
 ## Roadmap
 - [x] Username and password in config flow
-- [ ] Automatically fetch and store user information in config flow
+- [x] Automatically fetch and store user information in config flow
 - [ ] Historic hourly energy usage for the recorder
 - [ ] Offical Home Assistant integration
 
