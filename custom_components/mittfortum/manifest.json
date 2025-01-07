@@ -5,11 +5,11 @@
   "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/selleronom/mittfortum",
-  "issue_tracker": "https://github.com/selleronom/mittfortum/issues",
   "homekit": {},
   "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/selleronom/mittfortum/issues",
   "requirements": [],
   "ssdp": [],
-  "zeroconf": [],
-  "version": "2.1.0"
+  "version": "2.1.0",
+  "zeroconf": []
 }
