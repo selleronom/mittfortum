@@ -231,17 +231,34 @@ class OAuth2Client:
 
     async def follow_success_url(self, success_url: str, acr_sig: str) -> str:
         """Follow the success URL from the authentication flow."""
-        response = await self.session.get(
-            f"{success_url}&acr_sig={acr_sig}", follow_redirects=True
-        )
-        if response.status_code == 200:
-            location = None
+        try:
+            response = await self.session.get(
+                f"{success_url}&acr_sig={acr_sig}", 
+                follow_redirects=True
+            )
+            
+            _LOGGER.debug(f"Response status: {response.status_code}")
+            _LOGGER.debug(f"Response headers: {response.headers}")
+            _LOGGER.debug(f"Response history: {len(response.history)} redirects")
+            
+            final_location = None
             for r in response.history:
-                location = r.headers.get("Location")
-            return location
-        raise OAuth2ClientError(
-            f"Failed to follow success URL: {response.status_code} {response.text}"
-        )
+                _LOGGER.debug(f"Redirect URL: {r.headers.get('Location')}")
+                if 'code=' in r.headers.get('Location', ''):
+                    final_location = r.headers['Location']
+                    break
+                    
+            if final_location:
+                return final_location
+            
+            if 'code=' in str(response.url):
+                return str(response.url)
+                
+            raise OAuth2ClientError(
+                f"No authorization code found in response chain. Final URL: {response.url}"
+            )
+        except Exception as e:
+            raise OAuth2ClientError(f"Failed to follow success URL: {str(e)}")
 
     async def initiate_session(self, auth_url: str) -> None:
         """Initiate the session by navigating to the authorization URL."""
