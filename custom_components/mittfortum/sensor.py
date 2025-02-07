@@ -147,7 +147,7 @@ class FortumCostSensor(CoordinatorEntity, SensorEntity):
         """Return the state of the sensor."""
         data = self.coordinator.data
         if self.coordinator.data:
-            return sum(item["cost"] for item in data)
+            return sum(item["cost"] for item in data if "cost" in item)
         else:
             return None
 
