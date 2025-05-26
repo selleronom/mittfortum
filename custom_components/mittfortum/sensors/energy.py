@@ -42,9 +42,12 @@ class MittFortumEnergySensor(MittFortumEntity, SensorEntity):
         if self.coordinator.data is None:
             return None
         if not self.coordinator.data:  # Empty list
-            return 0
+            return 0.0
 
-        return sum(item.value for item in self.coordinator.data)
+        data = self.coordinator.data
+        assert isinstance(data, list)  # Type narrowing for pyrefly
+        energy_values = [float(item.value) for item in data]
+        return sum(energy_values, 0.0)
 
     @property
     def native_unit_of_measurement(self) -> str:
@@ -68,6 +71,7 @@ class MittFortumEnergySensor(MittFortumEntity, SensorEntity):
             return None
 
         data = self.coordinator.data
+        assert isinstance(data, list)  # Type narrowing for pyrefly
         return {
             "total_records": len(data),
             "latest_date": data[-1].date_time.isoformat() if data else None,

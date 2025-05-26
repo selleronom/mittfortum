@@ -24,7 +24,7 @@ class MittFortumEntity(CoordinatorEntity):
         name: str,
     ) -> None:
         """Initialize entity."""
-        super().__init__(coordinator)
+        super().__init__(coordinator)  # type: ignore[arg-type]
         self._device = device
         self._entity_key = entity_key
         self._name = name

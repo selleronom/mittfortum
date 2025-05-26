@@ -41,9 +41,12 @@ class MittFortumCostSensor(MittFortumEntity, SensorEntity):
         if self.coordinator.data is None:
             return None
         if not self.coordinator.data:  # Empty list
-            return 0
+            return 0.0
 
-        return sum(item.cost for item in self.coordinator.data if item.cost is not None)
+        data = self.coordinator.data
+        assert isinstance(data, list)  # Type narrowing for pyrefly
+        cost_values = [item.cost for item in data if item.cost is not None]
+        return sum(cost_values, 0.0)
 
     @property
     def native_unit_of_measurement(self) -> str:
@@ -67,6 +70,7 @@ class MittFortumCostSensor(MittFortumEntity, SensorEntity):
             return None
 
         data = self.coordinator.data
+        assert isinstance(data, list)  # Type narrowing for pyrefly
         cost_data = [item for item in data if item.cost is not None]
 
         return {
