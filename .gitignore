@@ -134,5 +134,19 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
-# VS Code settings
-.vscode/
+# VS Code settings (keep tasks, launch, and settings but exclude workspace)
+.vscode/settings.json.bak
+.vscode/*.code-workspace
+
+# Development Container secrets and runtime files
+.devcontainer/config/secrets.yaml
+.devcontainer/config/home-assistant_v2.db*
+.devcontainer/config/.storage/
+.devcontainer/config/logs/
+.devcontainer/config/deps/
+.devcontainer/config/tts/
+.devcontainer/config/www/
+.devcontainer/config/.cloud/
+.devcontainer/config/blueprints/
+.devcontainer/config/custom_components/
+!.devcontainer/config/custom_components/.gitkeep

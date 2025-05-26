@@ -1,0 +1,76 @@
+# Home Assistant Development Configuration
+# This configuration is optimized for testing the MittFortum integration
+default_config:
+
+# Configure Home Assistant
+homeassistant:
+  name: MittFortum Development
+  latitude: 59.3293
+  longitude: 18.0686
+  elevation: 43
+  unit_system: metric
+  currency: SEK
+  time_zone: Europe/Stockholm
+  country: SE
+  language: en
+  external_url: http://localhost:8123
+  internal_url: http://localhost:8123
+
+# Configure HTTP
+http:
+  use_x_forwarded_for: true
+  trusted_proxies:
+    - 127.0.0.1
+    - 172.16.0.0/12
+    - 192.168.0.0/16
+    - 10.0.0.0/8
+
+# Enable logging
+logger:
+  default: info
+  logs:
+    # Enable debug logging for our custom integration
+    custom_components.mittfortum: debug
+    # Reduce noise from other components during development
+    homeassistant.components.http: warning
+    homeassistant.components.websocket_api: warning
+    aiohttp.access: warning
+
+# Enable developer tools
+developer:
+
+# Sample automation to test with MittFortum data
+automation:
+  - alias: "MittFortum Development Test"
+    description: "Test automation for MittFortum integration development"
+    trigger:
+      - platform: state
+        entity_id: sensor.mittfortum_current_usage
+    condition: []
+    action:
+      - service: notify.persistent_notification
+        data:
+          title: "MittFortum Update"
+          message: "Current usage: {{ trigger.to_state.state }} {{ trigger.to_state.attributes.unit_of_measurement }}"
+
+# Sample template sensor
+template:
+  - sensor:
+      - name: "MittFortum Daily Cost"
+        unique_id: mittfortum_daily_cost_template
+        state: >
+          {% set usage = states('sensor.mittfortum_current_usage') | float(0) %}
+          {% set price = states('sensor.mittfortum_current_price') | float(0) %}
+          {{ (usage * price * 24) | round(2) }}
+        unit_of_measurement: "SEK"
+        device_class: monetary
+        state_class: total
+
+# Group entities for easy testing
+group:
+  mittfortum_sensors:
+    name: "MittFortum Sensors"
+    entities:
+      - sensor.mittfortum_current_usage
+      - sensor.mittfortum_current_price
+      - sensor.mittfortum_daily_cost_template
