@@ -37,10 +37,36 @@ class TestFortumAPIClient:
     async def test_get_customer_id_no_token(self, mock_hass, mock_auth_client):
         """Test customer ID extraction with no token."""
         mock_auth_client.id_token = None
+        mock_auth_client.session_data = None
 
         client = FortumAPIClient(mock_hass, mock_auth_client)
 
-        with pytest.raises(APIError, match="No ID token available"):
+        with pytest.raises(APIError, match="No ID token or session data available"):
+            await client.get_customer_id()
+
+    @pytest.mark.asyncio
+    async def test_get_customer_id_from_session(self, mock_hass, mock_auth_client):
+        """Test customer ID extraction from session data."""
+        mock_auth_client.session_data = {"user": {"customerId": "session_customer_123"}}
+        mock_auth_client.id_token = "session_based"
+
+        client = FortumAPIClient(mock_hass, mock_auth_client)
+
+        result = await client.get_customer_id()
+
+        assert result == "session_customer_123"
+
+    @pytest.mark.asyncio
+    async def test_get_customer_id_session_based_no_data(
+        self, mock_hass, mock_auth_client
+    ):
+        """Test customer ID extraction with session-based token but no session data."""
+        mock_auth_client.session_data = None
+        mock_auth_client.id_token = "session_based"
+
+        client = FortumAPIClient(mock_hass, mock_auth_client)
+
+        with pytest.raises(APIError, match="Customer ID not found in session data"):
             await client.get_customer_id()
 
     @pytest.mark.asyncio

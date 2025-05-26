@@ -48,6 +48,7 @@ class OAuth2AuthClient:
         # Token storage
         self._tokens: AuthTokens | None = None
         self._token_expiry: float | None = None
+        self._session_data: dict[str, Any] | None = None
 
     @property
     def access_token(self) -> str | None:
@@ -64,6 +65,11 @@ class OAuth2AuthClient:
         """Get current ID token."""
         return self._tokens.id_token if self._tokens else None
 
+    @property
+    def session_data(self) -> dict[str, Any] | None:
+        """Get current session data."""
+        return self._session_data
+
     def is_token_expired(self) -> bool:
         """Check if the current token is expired."""
         if not self._token_expiry:
@@ -71,49 +77,194 @@ class OAuth2AuthClient:
         return time.time() >= self._token_expiry
 
     async def authenticate(self) -> AuthTokens:
-        """Perform complete OAuth2 authentication flow."""
+        """Perform complete OAuth2 authentication flow using working NextAuth flow."""
         try:
-            config = await self._fetch_openid_configuration()
-            code_verifier = self._generate_code_verifier()
-            code_challenge = self._generate_code_challenge(code_verifier)
-            state = self._generate_state()
-
-            # Start authentication flow
-            auth_url = self._construct_authorization_url(config, code_challenge, state)
-
             async with get_async_client(self._hass) as client:
-                # Initiate session
-                await self._initiate_session(client, auth_url)
+                _LOGGER.debug("Starting working OAuth flow...")
 
-                # Authenticate user
-                await self._authenticate_user(client)
+                # Step 1: Initialize Fortum session
+                csrf_token = await self._initialize_fortum_session(client)
 
-                # Get user session
-                user_data = await self._get_user_session(client)
-                await self._fetch_user_details(client, user_data["id"])
+                # Step 2: Get OAuth URL from signin
+                oauth_url = await self._initiate_oauth_signin(client, csrf_token)
 
-                # Validate goto URL
-                goto_response = await self._validate_goto(client, code_challenge, state)
+                # Step 3: Perform SSO authentication
+                await self._perform_sso_authentication(client, oauth_url)
 
-                # Follow success URL to get authorization code
-                success_url = goto_response.get("successURL")
-                if not success_url:
-                    raise OAuth2Error("No successURL found in validation response")
+                # Step 4: Complete OAuth authorization flow
+                await self._complete_oauth_authorization(client, oauth_url)
 
-                acr_sig = self._generate_acr_sig(code_verifier)
-                auth_code = await self._follow_success_url(client, success_url, acr_sig)
+                # Step 5: Verify session is established
+                session_data = await self._verify_session_established(client)
 
-                # Exchange code for tokens
-                self._tokens = await self._exchange_code_for_tokens(
-                    client, auth_code, code_verifier
+                _LOGGER.info("OAuth flow completed successfully")
+
+                # Create session-based tokens with user information
+                self._tokens = AuthTokens(
+                    access_token="session_based",
+                    refresh_token="session_based",
+                    token_type="Bearer",
+                    expires_in=3600,
+                    id_token="session_based",
                 )
-                self._token_expiry = time.time() + self._tokens.expires_in
+                self._token_expiry = time.time() + 3600
+
+                # Store session data for later use
+                self._session_data = session_data
 
                 return self._tokens
 
         except Exception as exc:
             _LOGGER.exception("Authentication failed")
             raise AuthenticationError(f"Authentication failed: {exc}") from exc
+
+    async def _initialize_fortum_session(self, client) -> str:
+        """Initialize Fortum session and get CSRF token."""
+        # Get providers
+        providers_resp = await client.get(
+            "https://www.fortum.com/se/el/api/auth/providers"
+        )
+        if providers_resp.status_code != 200:
+            raise OAuth2Error(f"Providers fetch failed: {providers_resp.status_code}")
+
+        # Get CSRF token
+        csrf_resp = await client.get("https://www.fortum.com/se/el/api/auth/csrf")
+        if csrf_resp.status_code != 200:
+            raise OAuth2Error(f"CSRF fetch failed: {csrf_resp.status_code}")
+
+        csrf_data = csrf_resp.json()
+        csrf_token = csrf_data.get("csrfToken")
+        if not csrf_token:
+            raise OAuth2Error("No CSRF token received")
+
+        _LOGGER.debug("Got CSRF token: %s...", csrf_token[:20])
+        return csrf_token
+
+    async def _initiate_oauth_signin(self, client, csrf_token: str) -> str:
+        """Initiate OAuth signin and get OAuth URL."""
+        signin_data = {
+            "csrfToken": csrf_token,
+            "callbackUrl": "https://www.fortum.com/se/el/sv/private/overview",
+            "json": "true",
+        }
+
+        signin_resp = await client.post(
+            "https://www.fortum.com/se/el/api/auth/signin/ciamprod?ui_locales=sv",
+            data=signin_data,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+
+        if signin_resp.status_code != 200:
+            raise OAuth2Error(f"Signin initiation failed: {signin_resp.status_code}")
+
+        signin_result = signin_resp.json()
+        oauth_url = signin_result.get("url")
+        if not oauth_url:
+            raise OAuth2Error("No OAuth URL received from signin")
+
+        _LOGGER.debug("Got OAuth URL: %s...", oauth_url[:80])
+        return oauth_url
+
+    async def _perform_sso_authentication(self, client, oauth_url: str) -> None:
+        """Perform SSO authentication with credentials."""
+        auth_url = (
+            "https://sso.fortum.com/am/json/realms/root/realms/alpha/authenticate"
+        )
+
+        auth_params = {
+            "locale": "sv",
+            "authIndexType": "service",
+            "authIndexValue": "SeB2COGWLogin",
+            "goto": oauth_url,
+        }
+
+        auth_full_url = f"{auth_url}?{urlencode(auth_params)}"
+
+        # Initialize authentication
+        init_resp = await client.post(
+            auth_full_url,
+            headers={
+                "accept-api-version": "protocol=1.0,resource=2.1",
+                "content-type": "application/json",
+            },
+            json={},
+        )
+
+        if init_resp.status_code != 200:
+            raise OAuth2Error(f"Auth init failed: {init_resp.status_code}")
+
+        init_data = init_resp.json()
+        callbacks = init_data.get("callbacks", [])
+
+        # Submit credentials
+        for callback in callbacks:
+            if callback.get("type") == "StringAttributeInputCallback":
+                callback["input"] = [
+                    {"name": "IDToken5", "value": self._username},
+                    {"name": "IDToken5validateOnly", "value": False},
+                ]
+            elif callback.get("type") == "PasswordCallback":
+                callback["input"] = [{"name": "IDToken6", "value": self._password}]
+
+        login_payload = {"authId": init_data["authId"], "callbacks": callbacks}
+
+        login_resp = await client.post(
+            auth_full_url,
+            headers={
+                "accept-api-version": "protocol=1.0,resource=2.1",
+                "content-type": "application/json",
+            },
+            json=login_payload,
+        )
+
+        if login_resp.status_code != 200:
+            raise OAuth2Error(f"Login failed: {login_resp.status_code}")
+
+        login_data = login_resp.json()
+        _LOGGER.debug(
+            "SSO login successful, token: %s...", login_data.get("tokenId", "None")[:30]
+        )
+
+    async def _complete_oauth_authorization(self, client, oauth_url: str) -> None:
+        """Complete OAuth authorization flow."""
+        oauth_completion_resp = await client.get(oauth_url)
+
+        if oauth_completion_resp.status_code != 302:
+            raise OAuth2Error(
+                f"OAuth completion failed: {oauth_completion_resp.status_code}"
+            )
+
+        # Follow the callback redirect chain
+        callback_url = oauth_completion_resp.headers.get("location")
+        if not callback_url or "code=" not in callback_url:
+            raise OAuth2Error("No authorization code in callback URL")
+
+        _LOGGER.debug("Following callback URL...")
+
+        # Follow callback to complete flow
+        callback_resp = await client.get(callback_url)
+
+        # May get additional redirects
+        if callback_resp.status_code == 302:
+            final_redirect = callback_resp.headers.get("location")
+            if final_redirect:
+                await client.get(final_redirect)
+
+    async def _verify_session_established(self, client) -> dict[str, Any]:
+        """Verify that session is properly established."""
+        session_resp = await client.get("https://www.fortum.com/se/el/api/auth/session")
+
+        if session_resp.status_code != 200:
+            raise OAuth2Error(
+                f"Session verification failed: {session_resp.status_code}"
+            )
+
+        session_data = session_resp.json()
+        if not session_data.get("user"):
+            raise OAuth2Error("No user data in session")
+
+        _LOGGER.debug("Session verified successfully")
+        return session_data
 
     async def refresh_access_token(self) -> AuthTokens:
         """Refresh the access token using refresh token."""
@@ -181,7 +332,10 @@ class OAuth2AuthClient:
             "state": state,
             "code_challenge": code_challenge,
             "code_challenge_method": "S256",
-            "acr_values": "seb2clogin",
+            "acr_values": "seb2cogwlogin",
+            "locale": "sv",
+            "ui_locales": "sv",
+            "acr": "seb2cogwlogin",
             "response_mode": "query",
         }
         return f"{config['authorization_endpoint']}?{urlencode(params)}"
@@ -279,7 +433,8 @@ class OAuth2AuthClient:
             f"response_type=code&scope={'%20'.join(OAUTH_SCOPE)}&"
             f"state={state}&code_challenge={code_challenge}&"
             f"code_challenge_method=S256&response_mode=query&"
-            f"acr_values=seb2clogin&acr=seb2clogin"
+            f"acr_values=seb2cogwlogin&acr=seb2cogwlogin&"
+            f"locale=sv&ui_locales=sv"
         )
 
         response = await client.post(

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -16,11 +16,9 @@ if TYPE_CHECKING:
 class MittFortumEntity(CoordinatorEntity):
     """Base entity for MittFortum integration."""
 
-    coordinator: MittFortumDataCoordinator
-
     def __init__(
         self,
-        coordinator: Any,  # MittFortumDataCoordinator
+        coordinator: MittFortumDataCoordinator,
         device: MittFortumDevice,
         entity_key: str,
         name: str,

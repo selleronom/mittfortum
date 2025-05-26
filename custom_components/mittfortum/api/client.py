@@ -30,10 +30,23 @@ class FortumAPIClient:
         self._auth_client = auth_client
 
     async def get_customer_id(self) -> str:
-        """Extract customer ID from ID token."""
+        """Extract customer ID from session data or ID token."""
+        # For session-based authentication, get customer ID from session data
+        session_data = self._auth_client.session_data
+        if session_data and "user" in session_data:
+            user_data = session_data["user"]
+            customer_id = user_data.get("customerId")
+            if customer_id:
+                return customer_id
+
+        # Fall back to JWT token extraction for token-based authentication
         id_token = self._auth_client.id_token
         if not id_token:
-            raise APIError("No ID token available")
+            raise APIError("No ID token or session data available")
+
+        # Skip JWT decoding for session-based dummy tokens
+        if id_token == "session_based":
+            raise APIError("Customer ID not found in session data")
 
         try:
             import jwt

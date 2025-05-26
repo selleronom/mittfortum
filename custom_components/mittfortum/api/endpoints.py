@@ -19,13 +19,18 @@ class APIEndpoints:
 
     # OAuth2 endpoints
     OPENID_CONFIG = OAUTH_CONFIG_URL
-    AUTH_INIT = f"{OAUTH_AUTH_URL}?authIndexType=service&authIndexValue=SeB2CLogin"
+    AUTH_INIT = (
+        f"{OAUTH_AUTH_URL}?locale=sv&authIndexType=service&authIndexValue=SeB2COGWLogin"
+    )
     TOKEN_EXCHANGE = OAUTH_TOKEN_URL
     USER_SESSION = "https://sso.fortum.com/am/json/users?_action=idFromSession"
+    THEME_REALM = "https://sso.fortum.com/openidm/config/ui/themerealm"
     USER_DETAILS = (
         "https://sso.fortum.com/am/json/realms/root/realms/alpha/users/{user_id}"
     )
     VALIDATE_GOTO = "https://sso.fortum.com/am/json/realms/root/realms/alpha/users?_action=validateGoto"
+    SESSION_USERNAME = "https://www.fortum.com/se/el/api/get-session-username"
+    SESSION = "https://www.fortum.com/se/el/api/auth/session"
 
     # tRPC API endpoints
     TIME_SERIES = TIME_SERIES_URL

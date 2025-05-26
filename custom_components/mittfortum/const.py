@@ -42,8 +42,8 @@ COST_TYPES = {
 }
 
 # OAuth2 configuration
-OAUTH_CLIENT_ID = "swedenmypagesprod"
-OAUTH_REDIRECT_URI = "https://www.mittfortum.se"
+OAUTH_CLIENT_ID = "globalwebprod"
+OAUTH_REDIRECT_URI = "https://www.fortum.com/se/el/api/auth/callback/ciamprod"
 OAUTH_SECRET_KEY = "shared_secret"
 OAUTH_SCOPE = ["openid", "profile", "crmdata"]
 
