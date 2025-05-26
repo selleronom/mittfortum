@@ -99,15 +99,36 @@ class OAuth2AuthClient:
 
                 _LOGGER.info("OAuth flow completed successfully")
 
-                # Create session-based tokens with user information
+                # Extract real tokens from session data
+                user_data = session_data.get("user", {})
+                access_token = user_data.get("accessToken", "session_based")
+                id_token = user_data.get("idToken", "session_based")
+                expires_str = user_data.get("expires")
+
+                # Calculate token expiry
+                expires_in = 3600  # Default to 1 hour
+                if expires_str:
+                    try:
+                        from datetime import datetime
+
+                        expires_dt = datetime.fromisoformat(
+                            expires_str.replace("Z", "+00:00")
+                        )
+                        expires_in = int((expires_dt - datetime.now()).total_seconds())
+                        if expires_in < 0:
+                            expires_in = 3600  # Default if expired
+                    except Exception:
+                        expires_in = 3600
+
+                # Create tokens with real access token
                 self._tokens = AuthTokens(
-                    access_token="session_based",
-                    refresh_token="session_based",
+                    access_token=access_token,
+                    refresh_token="session_based",  # No refresh token in this flow
                     token_type="Bearer",
-                    expires_in=3600,
-                    id_token="session_based",
+                    expires_in=expires_in,
+                    id_token=id_token,
                 )
-                self._token_expiry = time.time() + 3600
+                self._token_expiry = time.time() + expires_in
 
                 # Store session data for later use
                 self._session_data = session_data
@@ -194,6 +215,13 @@ class OAuth2AuthClient:
             raise OAuth2Error(f"Auth init failed: {init_resp.status_code}")
 
         init_data = init_resp.json()
+        _LOGGER.debug("Auth init response: %s", init_data)
+
+        # Check if authId is present
+        auth_id = init_data.get("authId")
+        if not auth_id:
+            raise OAuth2Error(f"No authId in init response: {init_data}")
+
         callbacks = init_data.get("callbacks", [])
 
         # Submit credentials
@@ -206,7 +234,7 @@ class OAuth2AuthClient:
             elif callback.get("type") == "PasswordCallback":
                 callback["input"] = [{"name": "IDToken6", "value": self._password}]
 
-        login_payload = {"authId": init_data["authId"], "callbacks": callbacks}
+        login_payload = {"authId": auth_id, "callbacks": callbacks}
 
         login_resp = await client.post(
             auth_full_url,

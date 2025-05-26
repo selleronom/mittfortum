@@ -252,8 +252,20 @@ class MeteringPoint:
     @classmethod
     def from_api_response(cls, data: dict[str, Any]) -> MeteringPoint:
         """Create instance from API response data."""
+        # Handle the new API structure where meteringPointNo is nested in consumption
+        consumption = data.get("consumption", {})
+        metering_point_no = consumption.get("meteringPointNo")
+
+        # Fallback to old structure for backward compatibility
+        if not metering_point_no:
+            metering_point_no = data.get("meteringPointNo")
+
+        # Ensure we have a valid metering point number
+        if not metering_point_no:
+            raise ValueError("No meteringPointNo found in data")
+
         return cls(
-            metering_point_no=data["meteringPointNo"],
+            metering_point_no=str(metering_point_no),
             address=data.get("address"),
         )
 
