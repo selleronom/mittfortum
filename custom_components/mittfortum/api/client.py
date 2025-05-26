@@ -160,15 +160,40 @@ class FortumAPIClient:
         """Perform authenticated GET request."""
         await self._ensure_valid_token()
 
+        # For tRPC endpoints, use session-based authentication (cookies)
+        # For session endpoints, use session-based authentication (no explicit auth header)
         headers = {
-            "Authorization": f"Bearer {self._auth_client.access_token}",
             "Accept": "application/json",
-            "User-Agent": "Mozilla/5.0 (compatible; Home Assistant)",
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:138.0) Gecko/20100101 Firefox/138.0",
+            "Content-Type": "application/json",
+            "Referer": "https://www.fortum.com/se/el/inloggad/el",
         }
 
+        # Only add Authorization header for non-session endpoints if we have an access token
+        if (
+            "/api/trpc/" not in url
+            and "/api/auth/session" not in url
+            and self._auth_client.access_token
+            and self._auth_client.access_token != "session_based"
+        ):
+            headers["Authorization"] = f"Bearer {self._auth_client.access_token}"
+
         async with get_async_client(self._hass) as client:
+            # Add session cookies if available
+            if self._auth_client.session_cookies:
+                for name, value in self._auth_client.session_cookies.items():
+                    client.cookies[name] = value
+                _LOGGER.debug(
+                    "Added %d session cookies to request",
+                    len(self._auth_client.session_cookies),
+                )
+
             try:
                 _LOGGER.debug("Making GET request to: %s", url)
+                _LOGGER.debug(
+                    "Request headers: %s",
+                    {k: v for k, v in headers.items() if k != "Authorization"},
+                )
                 response = await client.get(url, headers=headers)
                 return await self._handle_response(response)
             except Exception as exc:

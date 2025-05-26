@@ -49,6 +49,7 @@ class OAuth2AuthClient:
         self._tokens: AuthTokens | None = None
         self._token_expiry: float | None = None
         self._session_data: dict[str, Any] | None = None
+        self._session_cookies: dict[str, str] = {}
 
     @property
     def access_token(self) -> str | None:
@@ -69,6 +70,11 @@ class OAuth2AuthClient:
     def session_data(self) -> dict[str, Any] | None:
         """Get current session data."""
         return self._session_data
+
+    @property
+    def session_cookies(self) -> dict[str, str]:
+        """Get current session cookies."""
+        return self._session_cookies
 
     def is_token_expired(self) -> bool:
         """Check if the current token is expired."""
@@ -98,6 +104,17 @@ class OAuth2AuthClient:
                 session_data = await self._verify_session_established(client)
 
                 _LOGGER.info("OAuth flow completed successfully")
+
+                # Store session cookies for later API calls
+                self._session_cookies = {}
+                for cookie in client.cookies.jar:
+                    if cookie.value is not None:
+                        self._session_cookies[cookie.name] = cookie.value
+
+                _LOGGER.debug(
+                    "Stored %d session cookies for API calls",
+                    len(self._session_cookies),
+                )
 
                 # Extract real tokens from session data
                 user_data = session_data.get("user", {})
