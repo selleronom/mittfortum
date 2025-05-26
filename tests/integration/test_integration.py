@@ -29,6 +29,9 @@ def mock_config_entry():
         },
         source="user",
         unique_id="test_user",
+        discovery_keys={},
+        options={},
+        subentries_data={},
     )
 
 
