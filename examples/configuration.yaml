@@ -1,0 +1,169 @@
+# MittFortum Integration Configuration Examples
+
+## Home Assistant Configuration
+
+### UI Configuration (Recommended)
+# Configure through Home Assistant UI:
+# 1. Go to Configuration > Integrations
+# 2. Click "Add Integration"
+# 3. Search for "MittFortum"
+# 4. Enter your MittFortum credentials
+
+### Manual Configuration (Advanced)
+# Add to configuration.yaml if needed:
+mittfortum:
+  username: !secret mittfortum_username
+  password: !secret mittfortum_password
+  scan_interval: 15  # Update interval in minutes (default: 15)
+  timeout: 30        # API timeout in seconds (default: 30)
+
+## Secrets Configuration
+# Add to secrets.yaml:
+mittfortum_username: "your_username_here"
+mittfortum_password: "your_password_here"
+
+# OAuth2 credentials (if using custom OAuth2 app):
+mittfortum_client_id: "your_client_id_here"
+mittfortum_client_secret: "your_client_secret_here"
+
+## Automation Examples
+
+### High Energy Consumption Alert
+automation:
+  - alias: "High Energy Consumption Alert"
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.main_meter_energy_consumption
+        above: 500  # kWh threshold
+    action:
+      - service: notify.pushover
+        data:
+          message: "High energy consumption: {{ states('sensor.main_meter_energy_consumption') }} kWh"
+          title: "Energy Alert"
+
+### Daily Energy Report
+  - alias: "Daily Energy Cost Report"
+    trigger:
+      - platform: time
+        at: "23:00:00"
+    action:
+      - service: notify.email
+        data:
+          title: "Daily Energy Report"
+          message: |
+            Energy consumed today: {{ states('sensor.main_meter_energy_consumption') }} kWh
+            Cost today: {{ states('sensor.main_meter_total_cost') }} SEK
+
+### Energy Saving Mode
+  - alias: "Enable Energy Saving Mode"
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.main_meter_total_cost
+        above: 100  # SEK threshold
+    action:
+      - service: switch.turn_off
+        entity_id: 
+          - switch.water_heater
+          - switch.electric_heater
+      - service: notify.mobile_app_phone
+        data:
+          message: "Energy saving mode activated - daily cost exceeded 100 SEK"
+
+## Lovelace Dashboard Configuration
+
+### Energy Monitoring Card
+type: entities
+title: Energy Monitoring
+entities:
+  - entity: sensor.main_meter_energy_consumption
+    name: Energy Consumption
+    icon: mdi:lightning-bolt
+  - entity: sensor.main_meter_total_cost
+    name: Total Cost
+    icon: mdi:currency-usd
+  - type: divider
+  - entity: sensor.main_meter_current_power
+    name: Current Power
+    icon: mdi:flash
+
+### Energy History Graph
+type: history-graph
+title: Energy Consumption History
+entities:
+  - sensor.main_meter_energy_consumption
+hours_to_show: 24
+refresh_interval: 300
+
+### Cost Gauge
+type: gauge
+entity: sensor.main_meter_total_cost
+min: 0
+max: 200
+needle: true
+severity:
+  green: 0
+  yellow: 100
+  red: 150
+
+## Energy Dashboard Integration
+# Add to Energy Dashboard configuration:
+energy_sources:
+  - entity: sensor.main_meter_energy_consumption
+    name: Grid Consumption
+    unit_of_measurement: kWh
+
+cost_sensors:
+  - entity: sensor.main_meter_total_cost
+    name: Energy Cost
+    unit_of_measurement: SEK
+
+## Template Sensors
+template:
+  - sensor:
+      - name: "Energy Cost per kWh"
+        unit_of_measurement: "SEK/kWh"
+        state: >
+          {% set energy = states('sensor.main_meter_energy_consumption') | float %}
+          {% set cost = states('sensor.main_meter_total_cost') | float %}
+          {% if energy > 0 %}
+            {{ (cost / energy) | round(2) }}
+          {% else %}
+            0
+          {% endif %}
+
+      - name: "Monthly Energy Estimate"
+        unit_of_measurement: "kWh"
+        state: >
+          {% set daily = states('sensor.main_meter_energy_consumption') | float %}
+          {{ (daily * 30) | round(1) }}
+
+## Utility Meter Configuration
+utility_meter:
+  daily_energy:
+    source: sensor.main_meter_energy_consumption
+    cycle: daily
+  
+  weekly_energy:
+    source: sensor.main_meter_energy_consumption
+    cycle: weekly
+  
+  monthly_energy:
+    source: sensor.main_meter_energy_consumption
+    cycle: monthly
+
+  daily_cost:
+    source: sensor.main_meter_total_cost
+    cycle: daily
+
+## Recorder Configuration
+# Optimize database storage:
+recorder:
+  exclude:
+    entities:
+      # Exclude frequently updating sensors if needed
+      - sensor.main_meter_current_power
+  include:
+    entities:
+      # Explicitly include important sensors
+      - sensor.main_meter_energy_consumption
+      - sensor.main_meter_total_cost

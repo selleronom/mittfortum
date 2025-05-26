@@ -1,0 +1,89 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.ruff]
+target-version = "py313"
+line-length = 88
+extend-exclude = [
+    "__pycache__",
+    ".pytest_cache",
+    ".venv",
+    "venv",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+    "ARG", # flake8-unused-arguments
+    "SIM", # flake8-simplify
+    "TCH", # flake8-type-checking
+    "PTH", # flake8-use-pathlib
+    "ERA", # eradicate
+    "PL", # pylint
+    "TRY", # tryceratops
+    "RUF", # ruff-specific rules
+]
+ignore = [
+    "E501",  # line too long, handled by formatter
+    "B008",  # do not perform function calls in argument defaults
+    "B904",  # raise from within try/except should use raise ... from ...
+    "PLR0913", # too many arguments
+    "PLR2004", # magic value used in comparison
+    "TRY003", # avoid specifying long messages outside the exception class
+    "TRY301", # abstract raise to an inner function (often reduces readability)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*" = [
+    "PLR2004", # magic value used in comparison
+    "S101",    # use of assert
+    "TID252",  # prefer absolute imports
+    "ARG001",  # unused function argument
+    "ARG002",  # unused method argument
+    "F841",    # local variable assigned but never used
+    "SIM117",  # use single with statement
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["custom_components.mittfortum"]
+force-sort-within-sections = true
+split-on-trailing-comma = true
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+[tool.pyrefly]
+project_includes = ["custom_components/**/*"]
+project_excludes = [
+    "**/.[!/.]*",
+    "**/__pycache__/**/*",
+    "**/.*venv/**/*",
+    "tests/**/*",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--disable-warnings",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
