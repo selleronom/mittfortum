@@ -23,8 +23,8 @@
     {
       "label": "Run Tests",
       "type": "shell",
-      "command": "pytest",
-      "args": ["-v", "--tb=short"],
+      "command": "${workspaceFolder}/.venv/bin/python",
+      "args": ["-m", "pytest", "-v", "--tb=short"],
       "group": "test",
       "presentation": {
         "echo": true,
@@ -37,8 +37,14 @@
     {
       "label": "Run Tests with Coverage",
       "type": "shell",
-      "command": "pytest",
-      "args": ["--cov=custom_components.mittfortum", "--cov-report=term-missing", "-v"],
+      "command": "${workspaceFolder}/.venv/bin/python",
+      "args": [
+        "-m",
+        "pytest",
+        "--cov=custom_components.mittfortum",
+        "--cov-report=term-missing",
+        "-v"
+      ],
       "group": "test",
       "presentation": {
         "echo": true,
@@ -128,7 +134,21 @@
       "label": "Clean Cache",
       "type": "shell",
       "command": "find",
-      "args": [".", "-type", "d", "-name", "__pycache__", "-exec", "rm", "-rf", "{}", "+", "2>/dev/null", "||", "true"],
+      "args": [
+        ".",
+        "-type",
+        "d",
+        "-name",
+        "__pycache__",
+        "-exec",
+        "rm",
+        "-rf",
+        "{}",
+        "+",
+        "2>/dev/null",
+        "||",
+        "true"
+      ],
       "group": "build",
       "presentation": {
         "echo": true,
