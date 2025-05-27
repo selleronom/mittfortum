@@ -47,8 +47,8 @@ class APIEndpoints:
             "0": {
                 "json": {
                     "meteringPointNo": metering_point_nos,
-                    "fromDate": from_date.isoformat(),
-                    "toDate": to_date.isoformat(),
+                    "fromDate": from_date.isoformat() + "Z",
+                    "toDate": to_date.isoformat() + "Z",
                     "resolution": resolution,
                 }
             }
