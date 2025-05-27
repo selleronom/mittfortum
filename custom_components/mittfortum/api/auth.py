@@ -95,10 +95,15 @@ class OAuth2AuthClient:
                 oauth_url = await self._initiate_oauth_signin(client, csrf_token)
 
                 # Step 3: Perform SSO authentication
-                await self._perform_sso_authentication(client, oauth_url)
+                updated_oauth_url = await self._perform_sso_authentication(
+                    client, oauth_url
+                )
+
+                # Use updated OAuth URL if provided, otherwise use original
+                final_oauth_url = updated_oauth_url if updated_oauth_url else oauth_url
 
                 # Step 4: Complete OAuth authorization flow
-                await self._complete_oauth_authorization(client, oauth_url)
+                await self._complete_oauth_authorization(client, final_oauth_url)
 
                 # Step 5: Verify session is established
                 session_data = await self._verify_session_established(client)
@@ -203,8 +208,12 @@ class OAuth2AuthClient:
         _LOGGER.debug("Got OAuth URL: %s...", oauth_url[:80])
         return oauth_url
 
-    async def _perform_sso_authentication(self, client, oauth_url: str) -> None:
-        """Perform SSO authentication with credentials."""
+    async def _perform_sso_authentication(self, client, oauth_url: str) -> str | None:
+        """Perform SSO authentication with credentials.
+
+        Returns:
+            Updated OAuth URL if provided by the SSO response, otherwise None.
+        """
         auth_url = (
             "https://sso.fortum.com/am/json/realms/root/realms/alpha/authenticate"
         )
@@ -237,7 +246,18 @@ class OAuth2AuthClient:
         # Check if authId is present
         auth_id = init_data.get("authId")
         if not auth_id:
-            raise OAuth2Error(f"No authId in init response: {init_data}")
+            # If no authId, check for successUrl which indicates we should proceed directly
+            success_url = init_data.get("successUrl")
+            if success_url:
+                _LOGGER.debug(
+                    "No authId found, but successUrl present. Using successUrl as OAuth URL: %s...",
+                    success_url[:80],
+                )
+                return success_url  # Return the successUrl to use as OAuth URL
+            else:
+                raise OAuth2Error(
+                    f"No authId or successUrl in init response: {init_data}"
+                )
 
         callbacks = init_data.get("callbacks", [])
 
@@ -269,6 +289,9 @@ class OAuth2AuthClient:
         _LOGGER.debug(
             "SSO login successful, token: %s...", login_data.get("tokenId", "None")[:30]
         )
+
+        # Return None to indicate using the original OAuth URL
+        return None
 
     async def _complete_oauth_authorization(self, client, oauth_url: str) -> None:
         """Complete OAuth authorization flow."""
