@@ -95,18 +95,63 @@ class FortumAPIClient:
         to_date: datetime | None = None,
         resolution: str = "MONTH",
     ) -> list[TimeSeries]:
-        """Fetch time series data using tRPC endpoint."""
-        # Default to last 12 months if no dates provided
+        """Fetch time series data using tRPC endpoint with automatic retry logic."""
+        # Default to last 3 months if no dates provided
         if not from_date:
-            from_date = datetime.now().replace(day=1) - timedelta(days=365)
+            from_date = datetime.now().replace(day=1) - timedelta(days=90)
         if not to_date:
             to_date = datetime.now()
 
+        # Try with the requested date range first
+        try:
+            return await self._fetch_time_series_data(
+                metering_point_nos, from_date, to_date, resolution
+            )
+        except APIError as exc:
+            if "Server error" in str(exc) or "reducing date range" in str(exc):
+                _LOGGER.warning(
+                    "Server error with requested date range, trying with last 30 days"
+                )
+                # Fallback to last 30 days
+                fallback_from = datetime.now() - timedelta(days=30)
+                fallback_to = datetime.now()
+                try:
+                    return await self._fetch_time_series_data(
+                        metering_point_nos, fallback_from, fallback_to, resolution
+                    )
+                except APIError:
+                    _LOGGER.warning(
+                        "Server error with 30-day range, trying with last 7 days"
+                    )
+                    # Final fallback to last 7 days
+                    final_from = datetime.now() - timedelta(days=7)
+                    final_to = datetime.now()
+                    return await self._fetch_time_series_data(
+                        metering_point_nos, final_from, final_to, resolution
+                    )
+            else:
+                raise
+
+    async def _fetch_time_series_data(
+        self,
+        metering_point_nos: list[str],
+        from_date: datetime,
+        to_date: datetime,
+        resolution: str,
+    ) -> list[TimeSeries]:
+        """Internal method to fetch time series data."""
         url = APIEndpoints.get_time_series_url(
             metering_point_nos=metering_point_nos,
             from_date=from_date,
             to_date=to_date,
             resolution=resolution,
+        )
+
+        _LOGGER.debug(
+            "Fetching time series data from %s to %s with resolution %s",
+            from_date.isoformat(),
+            to_date.isoformat(),
+            resolution,
         )
 
         response = await self._get(url)
@@ -236,6 +281,36 @@ class FortumAPIClient:
             _LOGGER.warning("Access forbidden, may need re-authentication")
             raise APIError("Access forbidden - authentication may be required")
 
+        if response.status_code == 500:
+            # Server error - check if it's a tRPC error with specific format
+            try:
+                error_data = response.json()
+                if isinstance(error_data, list) and len(error_data) > 0:
+                    error_item = error_data[0]
+                    if "error" in error_item:
+                        error_details = error_item["error"]
+                        if "json" in error_details:
+                            json_error = error_details["json"]
+                            error_msg = json_error.get("message", "Unknown error")
+                            error_code = json_error.get("code", "Unknown")
+                            _LOGGER.error(
+                                "Server error (tRPC): %s (code: %s)",
+                                error_msg,
+                                error_code,
+                            )
+                            # For INTERNAL_SERVER_ERROR, try with reduced date range
+                            if error_msg == "INTERNAL_SERVER_ERROR":
+                                raise APIError(
+                                    "Server error - try reducing date range or changing resolution"
+                                )
+                            else:
+                                raise APIError(f"Server error: {error_msg}")
+            except (ValueError, KeyError):
+                pass  # Fall through to generic handling
+
+            _LOGGER.error("Server error (500): %s", response.text)
+            raise APIError("Server internal error - try again later")
+
         if response.status_code != 200:
             _LOGGER.error(
                 "Unexpected status code: %s, response: %s",
@@ -258,3 +333,73 @@ class FortumAPIClient:
                 await self._auth_client.refresh_access_token()
             else:
                 await self._auth_client.authenticate()
+
+    async def test_connection(self) -> dict[str, Any]:
+        """Test API connection and return status information."""
+        try:
+            # Test session endpoint first
+            session_response = await self._get(SESSION_URL)
+            session_data = session_response.json()
+
+            # Check if we have user data
+            user_data = session_data.get("user", {})
+            if not user_data:
+                return {
+                    "success": False,
+                    "error": "No user data in session - authentication may have failed",
+                    "session_status": "invalid",
+                }
+
+            # Extract metering points
+            metering_points = []
+            if "deliverySites" in user_data:
+                for site in user_data["deliverySites"]:
+                    if (
+                        "consumption" in site
+                        and "meteringPointNo" in site["consumption"]
+                    ):
+                        metering_points.append(site["consumption"]["meteringPointNo"])
+
+            if not metering_points:
+                return {
+                    "success": False,
+                    "error": "No metering points found in session data",
+                    "session_status": "valid",
+                    "user_id": user_data.get("id"),
+                }
+
+            # Test a simple tRPC call with minimal data
+            try:
+                # Try last 24 hours with hourly resolution (minimal request)
+                test_from = datetime.now() - timedelta(hours=24)
+                test_to = datetime.now()
+
+                test_series = await self._fetch_time_series_data(
+                    [metering_points[0]], test_from, test_to, "HOUR"
+                )
+
+                return {
+                    "success": True,
+                    "session_status": "valid",
+                    "user_id": user_data.get("id"),
+                    "metering_points": metering_points,
+                    "api_test": "passed",
+                    "test_data_points": len(test_series),
+                }
+
+            except Exception as api_exc:
+                return {
+                    "success": False,
+                    "error": f"API test failed: {api_exc}",
+                    "session_status": "valid",
+                    "user_id": user_data.get("id"),
+                    "metering_points": metering_points,
+                    "api_test": "failed",
+                }
+
+        except Exception as exc:
+            return {
+                "success": False,
+                "error": f"Connection test failed: {exc}",
+                "session_status": "unknown",
+            }
