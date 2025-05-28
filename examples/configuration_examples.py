@@ -34,7 +34,9 @@ mittfortum_client_secret: "your_client_secret_here"
   action:
     - service: notify.pushover
       data:
-        message: "High energy consumption detected: {{ states('sensor.main_meter_energy_consumption') }} kWh"
+        message: >
+          High energy consumption detected:
+          {{ states('sensor.main_meter_energy_consumption') }} kWh
         title: "Energy Alert"
 
 - alias: "Daily Energy Cost Report"
@@ -46,7 +48,8 @@ mittfortum_client_secret: "your_client_secret_here"
       data:
         title: "Daily Energy Report"
         message: |
-          Energy consumed today: {{ states('sensor.main_meter_energy_consumption') }} kWh
+          Energy consumed today:
+          {{ states('sensor.main_meter_energy_consumption') }} kWh
           Cost today: {{ states('sensor.main_meter_total_cost') }} SEK
 """
 

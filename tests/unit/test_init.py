@@ -2,9 +2,9 @@
 
 from unittest.mock import AsyncMock, patch
 
+import pytest
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
-import pytest
 
 from custom_components.mittfortum import async_setup_entry, async_unload_entry
 from custom_components.mittfortum.const import DOMAIN

@@ -15,12 +15,3 @@ repos:
       - id: ruff
         args: [--fix]
       - id: ruff-format
-
-  - repo: local
-    hooks:
-      - id: pyrefly
-        name: pyrefly
-        entry: pyrefly check
-        language: system
-        types: [python]
-        pass_filenames: false

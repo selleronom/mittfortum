@@ -3,9 +3,9 @@
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, Mock
 
+import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import UpdateFailed
-import pytest
 
 from custom_components.mittfortum.api.client import FortumAPIClient
 from custom_components.mittfortum.coordinator import MittFortumDataCoordinator

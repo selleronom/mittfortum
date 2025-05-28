@@ -24,7 +24,12 @@
       "label": "Run Tests",
       "type": "shell",
       "command": "uv",
-      "args": ["run", "pytest", "-v", "--tb=short"],
+      "args": [
+        "run",
+        "pytest",
+        "-v",
+        "--tb=short"
+      ],
       "group": "test",
       "presentation": {
         "echo": true,
@@ -58,7 +63,12 @@
       "label": "Lint with Ruff",
       "type": "shell",
       "command": "uv",
-      "args": ["run", "ruff", "check", "."],
+      "args": [
+        "run",
+        "ruff",
+        "check",
+        "."
+      ],
       "group": "build",
       "presentation": {
         "echo": true,
@@ -72,7 +82,12 @@
       "label": "Format with Ruff",
       "type": "shell",
       "command": "uv",
-      "args": ["run", "ruff", "format", "."],
+      "args": [
+        "run",
+        "ruff",
+        "format",
+        "."
+      ],
       "group": "build",
       "presentation": {
         "echo": true,
@@ -83,10 +98,15 @@
       "problemMatcher": []
     },
     {
-      "label": "Type Check with Pyrefly",
+      "label": "Type Check with MyPy",
       "type": "shell",
       "command": "uv",
-      "args": ["run", "pyrefly", "."],
+      "args": [
+        "run",
+        "mypy",
+        "custom_components",
+        "tests"
+      ],
       "group": "build",
       "presentation": {
         "echo": true,
@@ -100,7 +120,12 @@
       "label": "Run All Checks",
       "type": "shell",
       "command": "uv",
-      "args": ["run", "pre-commit", "run", "--all-files"],
+      "args": [
+        "run",
+        "pre-commit",
+        "run",
+        "--all-files"
+      ],
       "group": "build",
       "presentation": {
         "echo": true,
@@ -113,14 +138,17 @@
       "dependsOn": [
         "Format with Ruff",
         "Lint with Ruff",
-        "Type Check with Pyrefly"
+        "Type Check with MyPy"
       ]
     },
     {
       "label": "Install Development Dependencies",
       "type": "shell",
       "command": "uv",
-      "args": ["sync", "--dev"],
+      "args": [
+        "sync",
+        "--dev"
+      ],
       "group": "build",
       "presentation": {
         "echo": true,

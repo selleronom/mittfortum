@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
-from homeassistant.core import HomeAssistant
 import pytest
+from homeassistant.core import HomeAssistant
 
 from custom_components.mittfortum.api import FortumAPIClient, OAuth2AuthClient
 from custom_components.mittfortum.models import (

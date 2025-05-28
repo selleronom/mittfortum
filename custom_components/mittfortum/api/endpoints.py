@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime  # noqa: TC003
 import json
 import urllib.parse
+from datetime import datetime
 
 from ..const import (
     OAUTH_AUTH_URL,

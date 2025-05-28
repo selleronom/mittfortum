@@ -8,9 +8,9 @@ import hmac
 import logging
 import os
 import time
+import uuid
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, urlencode, urlparse
-import uuid
 
 from homeassistant.helpers.httpx_client import get_async_client
 
@@ -246,11 +246,13 @@ class OAuth2AuthClient:
         # Check if authId is present
         auth_id = init_data.get("authId")
         if not auth_id:
-            # If no authId, check for successUrl which indicates we should proceed directly
+            # If no authId, check for successUrl which indicates we should
+            # proceed directly
             success_url = init_data.get("successUrl")
             if success_url:
                 _LOGGER.debug(
-                    "No authId found, but successUrl present. Using successUrl as OAuth URL: %s...",
+                    "No authId found, but successUrl present. "
+                    "Using successUrl as OAuth URL: %s...",
                     success_url[:80],
                 )
                 return success_url  # Return the successUrl to use as OAuth URL

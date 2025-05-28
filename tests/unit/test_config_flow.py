@@ -2,10 +2,10 @@
 
 from unittest.mock import AsyncMock, Mock, patch
 
+import pytest
 from homeassistant import data_entry_flow
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
-import pytest
 
 from custom_components.mittfortum.config_flow import (
     CannotConnect,
@@ -53,7 +53,7 @@ class TestMittFortumConfigFlow:
 
         with (
             patch.object(config_flow, "async_set_unique_id") as mock_set_id,
-            patch.object(config_flow, "_abort_if_unique_id_configured") as mock_abort,
+            patch.object(config_flow, "_abort_if_unique_id_configured"),
         ):
             result = await config_flow.async_step_user(user_input)
 

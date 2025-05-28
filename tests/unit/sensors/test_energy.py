@@ -3,9 +3,9 @@
 from datetime import datetime
 from unittest.mock import Mock
 
+import pytest
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import UnitOfEnergy
-import pytest
 
 from custom_components.mittfortum.device import MittFortumDevice
 from custom_components.mittfortum.models import ConsumptionData

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import timedelta  # noqa: TC003
 import logging
+from datetime import timedelta  # noqa: TC003
 from typing import TYPE_CHECKING
 
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed

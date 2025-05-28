@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
 import logging
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.helpers.httpx_client import get_async_client
@@ -206,15 +206,19 @@ class FortumAPIClient:
         await self._ensure_valid_token()
 
         # For tRPC endpoints, use session-based authentication (cookies)
-        # For session endpoints, use session-based authentication (no explicit auth header)
+        # For session endpoints, use session-based authentication
+        # (no explicit auth header)
         headers = {
             "Accept": "application/json",
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:138.0) Gecko/20100101 Firefox/138.0",
+            "User-Agent": (
+                "Mozilla/5.0 (X11; Linux x86_64; rv:138.0) Gecko/20100101 Firefox/138.0"
+            ),
             "Content-Type": "application/json",
             "Referer": "https://www.fortum.com/se/el/inloggad/el",
         }
 
-        # Only add Authorization header for non-session endpoints if we have an access token
+        # Only add Authorization header for non-session endpoints
+        # if we have an access token
         if (
             "/api/trpc/" not in url
             and "/api/auth/session" not in url
@@ -301,7 +305,8 @@ class FortumAPIClient:
                             # For INTERNAL_SERVER_ERROR, try with reduced date range
                             if error_msg == "INTERNAL_SERVER_ERROR":
                                 raise APIError(
-                                    "Server error - try reducing date range or changing resolution"
+                                    "Server error - try reducing date range "
+                                    "or changing resolution"
                                 )
                             else:
                                 raise APIError(f"Server error: {error_msg}")
