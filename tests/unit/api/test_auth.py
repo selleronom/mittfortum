@@ -1,6 +1,6 @@
 """Unit tests for OAuth2AuthClient."""
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
@@ -118,3 +118,92 @@ class TestOAuth2AuthClient:
         ):
             with pytest.raises(AuthenticationError):
                 await client.authenticate()
+
+    async def test_refresh_access_token_session_based(
+        self, mock_hass, sample_auth_tokens
+    ):
+        """Test refresh access token with session-based token calls authenticate."""
+        # Set up mock_hass.data for get_async_client
+        mock_hass.data = {}
+
+        client = OAuth2AuthClient(
+            hass=mock_hass,
+            username="test@example.com",
+            password="test_password",
+        )
+
+        # Set up session-based tokens
+        session_tokens = sample_auth_tokens
+        session_tokens.refresh_token = "session_based"
+        client._tokens = session_tokens
+
+        # Mock authenticate method
+        with patch.object(
+            client, "authenticate", return_value=sample_auth_tokens
+        ) as mock_auth:
+            result = await client.refresh_access_token()
+
+            mock_auth.assert_called_once()
+            assert result == sample_auth_tokens
+
+    async def test_refresh_access_token_no_refresh_token(self, mock_hass):
+        """Test refresh access token without refresh token raises error."""
+        client = OAuth2AuthClient(
+            hass=mock_hass,
+            username="test@example.com",
+            password="test_password",
+        )
+
+        with pytest.raises(AuthenticationError, match="No refresh token available"):
+            await client.refresh_access_token()
+
+    async def test_refresh_access_token_real_oauth_token(
+        self, mock_hass, sample_auth_tokens
+    ):
+        """Test refresh access token with real OAuth2 token."""
+        # Set up mock_hass.data for get_async_client
+        mock_hass.data = {}
+
+        client = OAuth2AuthClient(
+            hass=mock_hass,
+            username="test@example.com",
+            password="test_password",
+        )
+
+        # Set up real OAuth tokens
+        real_tokens = sample_auth_tokens
+        real_tokens.refresh_token = "real_refresh_token"
+        client._tokens = real_tokens
+
+        # Mock the HTTP client and response
+        mock_response = AsyncMock()
+        mock_response.status_code = 200
+        mock_response.json = Mock(
+            return_value={
+                "access_token": "new_access_token",
+                "refresh_token": "new_refresh_token",
+                "token_type": "Bearer",
+                "expires_in": 3600,
+                "id_token": "new_id_token",
+            }
+        )
+
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+
+        with patch(
+            "custom_components.mittfortum.api.auth.get_async_client"
+        ) as mock_get_client:
+            mock_get_client.return_value.__aenter__.return_value = mock_client
+
+            result = await client.refresh_access_token()
+
+            # Verify the token exchange call was made
+            mock_client.post.assert_called_once()
+            call_args = mock_client.post.call_args
+            assert call_args[1]["data"]["grant_type"] == "refresh_token"
+            assert call_args[1]["data"]["refresh_token"] == "real_refresh_token"
+
+            # Verify tokens were updated
+            assert result.access_token == "new_access_token"
+            assert result.refresh_token == "new_refresh_token"

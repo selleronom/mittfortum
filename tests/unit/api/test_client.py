@@ -112,3 +112,56 @@ class TestFortumAPIClient:
         with patch.object(client, "get_metering_points", return_value=[]):
             with pytest.raises(APIError, match="No metering points found"):
                 await client.get_consumption_data()
+
+    async def test_ensure_valid_token_session_based(self, mock_hass, mock_auth_client):
+        """Test _ensure_valid_token with session-based token."""
+        client = FortumAPIClient(mock_hass, mock_auth_client)
+
+        # Mock token as expired and session-based
+        mock_auth_client.is_token_expired.return_value = True
+        mock_auth_client.refresh_token = "session_based"
+
+        with patch.object(mock_auth_client, "authenticate") as mock_auth:
+            await client._ensure_valid_token()
+            mock_auth.assert_called_once()
+
+    async def test_ensure_valid_token_real_refresh_token(
+        self, mock_hass, mock_auth_client
+    ):
+        """Test _ensure_valid_token with real OAuth2 refresh token."""
+        client = FortumAPIClient(mock_hass, mock_auth_client)
+
+        # Mock token as expired with real refresh token
+        mock_auth_client.is_token_expired.return_value = True
+        mock_auth_client.refresh_token = "real_refresh_token"
+
+        with patch.object(mock_auth_client, "refresh_access_token") as mock_refresh:
+            await client._ensure_valid_token()
+            mock_refresh.assert_called_once()
+
+    async def test_ensure_valid_token_not_expired(self, mock_hass, mock_auth_client):
+        """Test _ensure_valid_token with valid token."""
+        client = FortumAPIClient(mock_hass, mock_auth_client)
+
+        # Mock token as not expired
+        mock_auth_client.is_token_expired.return_value = False
+
+        with patch.object(mock_auth_client, "authenticate") as mock_auth:
+            with patch.object(mock_auth_client, "refresh_access_token") as mock_refresh:
+                await client._ensure_valid_token()
+                mock_auth.assert_not_called()
+                mock_refresh.assert_not_called()
+
+    async def test_ensure_valid_token_no_refresh_token(
+        self, mock_hass, mock_auth_client
+    ):
+        """Test _ensure_valid_token with no refresh token."""
+        client = FortumAPIClient(mock_hass, mock_auth_client)
+
+        # Mock token as expired with no refresh token
+        mock_auth_client.is_token_expired.return_value = True
+        mock_auth_client.refresh_token = None
+
+        with patch.object(mock_auth_client, "authenticate") as mock_auth:
+            await client._ensure_valid_token()
+            mock_auth.assert_called_once()

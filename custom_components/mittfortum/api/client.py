@@ -334,9 +334,14 @@ class FortumAPIClient:
     async def _ensure_valid_token(self) -> None:
         """Ensure we have a valid access token."""
         if self._auth_client.is_token_expired():
-            if self._auth_client.refresh_token:
+            # Check if we have a real OAuth2 refresh token or session-based token
+            if (
+                self._auth_client.refresh_token
+                and self._auth_client.refresh_token != "session_based"
+            ):
                 await self._auth_client.refresh_access_token()
             else:
+                # For session-based auth or no refresh token, re-authenticate
                 await self._auth_client.authenticate()
 
     async def test_connection(self) -> dict[str, Any]:
