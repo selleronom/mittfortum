@@ -6,7 +6,12 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "PyJWT>=2.4.0",
+    "homeassistant>=2025.4.4",
     "httpx>=0.24.0",
+    "mypy>=1.15.0",
+    "pytest>=8.3.5",
+    "pytest-cov>=6.1.1",
+    "pytest-asyncio",
 ]
 
 [project.optional-dependencies]
@@ -18,6 +23,7 @@ dev = [
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.0.0",
     "homeassistant>=2025.1.0",
+    "python-semantic-release>=8.0.0",
 ]
 
 [tool.ruff]
@@ -47,26 +53,39 @@ warn_unreachable = true
 warn_unused_ignores = true
 warn_redundant_casts = true
 show_error_codes = true
+explicit_package_bases = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+pythonpath = ["."]
 addopts = [
     "-v",
     "--tb=short",
     "--strict-markers",
     "--strict-config",
-    "--cov=custom_components.mittfortum",
-    "--cov-report=term-missing:skip-covered",
-    "--cov-report=xml",
-    "--cov-report=html",
-    "--cov-fail-under=80",
+    "--asyncio-mode=auto",
 ]
 markers = [
     "unit: Unit tests",
     "integration: Integration tests",
     "slow: Slow running tests",
+    "asyncio: Async test functions",
 ]
+
+[tool.pytest_asyncio]
 asyncio_mode = "auto"
+
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]
+branch = "main"
+changelog_file = "CHANGELOG.md"
+build_command = "echo 'No build required'"
+commit_author = "github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
+commit_message = "chore: release v{version}"
+tag_format = "v{version}"
+upload_to_pypi = false
+upload_to_release = true
+hvcs = "github"
