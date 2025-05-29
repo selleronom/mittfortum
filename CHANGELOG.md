@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+### Removed
+
+## [3.0.0] - 2025-05-29
+
+### Added
 - Complete refactoring of the integration architecture
 - Modern Home Assistant patterns with coordinators and proper device/entity structure
 - Comprehensive type safety with data models and type annotations

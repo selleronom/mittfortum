@@ -74,6 +74,7 @@ asyncio_default_fixture_loop_scope = "function"
 
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
+version_variables = ["custom_components/mittfortum/manifest.json:version"]
 branch = "main"
 changelog_file = "CHANGELOG.md"
 build_command = "echo 'No build required'"
@@ -83,3 +84,10 @@ tag_format = "{version}"
 upload_to_pypi = false
 upload_to_release = true
 hvcs = "github"
+
+[tool.semantic_release.remote]
+type = "github"
+ignore_token_for_push = false
+
+[tool.semantic_release.publish]
+dist_glob_patterns = ["custom_components/**/*"]
