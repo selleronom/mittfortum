@@ -18,7 +18,15 @@ from custom_components.mittfortum.models import (
 @pytest.fixture
 def mock_hass():
     """Mock Home Assistant instance."""
-    return MagicMock(spec=HomeAssistant)
+    hass = MagicMock(spec=HomeAssistant)
+    hass.data = {}
+    hass.states = MagicMock()
+    hass.config_entries = MagicMock()
+    hass.config_entries._entries = {}
+    hass.config_entries.async_setup = AsyncMock(return_value=True)
+    hass.config_entries.async_unload = AsyncMock(return_value=True)
+    hass.async_block_till_done = AsyncMock()
+    return hass
 
 
 @pytest.fixture

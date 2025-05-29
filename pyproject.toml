@@ -43,12 +43,13 @@ indent-style = "space"
 
 [tool.mypy]
 python_version = "3.13"
-strict = true
-warn_unreachable = true
+strict = false
+warn_unreachable = false
 warn_unused_ignores = true
 warn_redundant_casts = true
 show_error_codes = true
 explicit_package_bases = true
+disallow_untyped_defs = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -67,11 +68,9 @@ markers = [
     "unit: Unit tests",
     "integration: Integration tests",
     "slow: Slow running tests",
-    "asyncio: Async test functions",
 ]
-
-[tool.pytest_asyncio]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]

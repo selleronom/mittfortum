@@ -43,6 +43,8 @@ class MittFortumDataCoordinator(DataUpdateCoordinator[list[ConsumptionData]]):
         try:
             _LOGGER.debug("Fetching consumption data from API")
             data = await self.api_client.get_total_consumption()
+            if data is None:
+                data = []
             _LOGGER.debug("Successfully fetched %d consumption records", len(data))
         except APIError as exc:
             _LOGGER.exception("API error during data update")

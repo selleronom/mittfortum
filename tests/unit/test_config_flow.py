@@ -3,9 +3,9 @@
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from homeassistant import data_entry_flow
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import FlowResultType
 
 from custom_components.mittfortum.config_flow import (
     CannotConnect,
@@ -37,7 +37,7 @@ class TestMittFortumConfigFlow:
         """Test user step shows form."""
         result = await config_flow.async_step_user()
 
-        assert result["type"] == data_entry_flow.RESULT_TYPE_FORM
+        assert result["type"] == FlowResultType.FORM
         assert result["step_id"] == "user"
         assert result["errors"] == {}
 
@@ -57,7 +57,7 @@ class TestMittFortumConfigFlow:
         ):
             result = await config_flow.async_step_user(user_input)
 
-            assert result["type"] == data_entry_flow.RESULT_TYPE_CREATE_ENTRY
+            assert result["type"] == FlowResultType.CREATE_ENTRY
             assert result["title"] == "MittFortum (test_user)"
             assert result["data"] == user_input
             mock_set_id.assert_called_once_with("test_user")
@@ -74,7 +74,7 @@ class TestMittFortumConfigFlow:
 
         result = await config_flow.async_step_user(user_input)
 
-        assert result["type"] == data_entry_flow.RESULT_TYPE_FORM
+        assert result["type"] == FlowResultType.FORM
         assert result["step_id"] == "user"
         assert result["errors"] == {"base": "invalid_auth"}
 
@@ -90,7 +90,7 @@ class TestMittFortumConfigFlow:
 
         result = await config_flow.async_step_user(user_input)
 
-        assert result["type"] == data_entry_flow.RESULT_TYPE_FORM
+        assert result["type"] == FlowResultType.FORM
         assert result["step_id"] == "user"
         assert result["errors"] == {"base": "cannot_connect"}
 
@@ -106,7 +106,7 @@ class TestMittFortumConfigFlow:
 
         result = await config_flow.async_step_user(user_input)
 
-        assert result["type"] == data_entry_flow.RESULT_TYPE_FORM
+        assert result["type"] == FlowResultType.FORM
         assert result["step_id"] == "user"
         assert result["errors"] == {"base": "unknown"}
 

@@ -19,7 +19,6 @@ class TestFortumAPIClient:
         assert client._hass == mock_hass
         assert client._auth_client == mock_auth_client
 
-    @pytest.mark.asyncio
     async def test_get_customer_id_success(self, mock_hass, mock_auth_client):
         """Test successful customer ID extraction."""
         mock_auth_client.id_token = "test_token"
@@ -33,7 +32,6 @@ class TestFortumAPIClient:
 
             assert result == "customer_123"
 
-    @pytest.mark.asyncio
     async def test_get_customer_id_no_token(self, mock_hass, mock_auth_client):
         """Test customer ID extraction with no token."""
         mock_auth_client.id_token = None
@@ -44,7 +42,6 @@ class TestFortumAPIClient:
         with pytest.raises(APIError, match="No ID token or session data available"):
             await client.get_customer_id()
 
-    @pytest.mark.asyncio
     async def test_get_customer_id_from_session(self, mock_hass, mock_auth_client):
         """Test customer ID extraction from session data."""
         mock_auth_client.session_data = {"user": {"customerId": "session_customer_123"}}
@@ -56,7 +53,6 @@ class TestFortumAPIClient:
 
         assert result == "session_customer_123"
 
-    @pytest.mark.asyncio
     async def test_get_customer_id_session_based_no_data(
         self, mock_hass, mock_auth_client
     ):
@@ -69,7 +65,6 @@ class TestFortumAPIClient:
         with pytest.raises(APIError, match="Customer ID not found in session data"):
             await client.get_customer_id()
 
-    @pytest.mark.asyncio
     async def test_get_customer_details_success(
         self, mock_hass, mock_auth_client, sample_customer_details
     ):
@@ -94,7 +89,6 @@ class TestFortumAPIClient:
             assert result.customer_id == "customer_123"
             assert result.postal_address == "Test Street 123"
 
-    @pytest.mark.asyncio
     async def test_get_total_consumption_success(
         self, mock_hass, mock_auth_client, sample_consumption_data
     ):
@@ -109,7 +103,6 @@ class TestFortumAPIClient:
             assert result == sample_consumption_data
             assert len(result) == 2
 
-    @pytest.mark.asyncio
     async def test_get_total_consumption_no_metering_points(
         self, mock_hass, mock_auth_client
     ):

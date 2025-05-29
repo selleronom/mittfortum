@@ -57,7 +57,6 @@ class TestOAuth2AuthClient:
 
         assert client.is_token_expired() is True
 
-    @pytest.mark.asyncio
     async def test_authenticate_success(self, mock_hass, sample_auth_tokens):
         """Test successful authentication."""
         # Set up mock_hass.data for get_async_client
@@ -103,7 +102,6 @@ class TestOAuth2AuthClient:
             assert result.id_token == "test_id_token"
             assert client._tokens.access_token == "test_access_token"
 
-    @pytest.mark.asyncio
     async def test_authenticate_failure(self, mock_hass):
         """Test authentication failure."""
         # Set up mock_hass.data for get_async_client

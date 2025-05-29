@@ -2,7 +2,6 @@
 
 from unittest.mock import AsyncMock, patch
 
-import pytest
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 
@@ -13,7 +12,6 @@ from custom_components.mittfortum.const import DOMAIN
 class TestInit:
     """Test integration setup and teardown."""
 
-    @pytest.mark.asyncio
     async def test_async_setup_entry_success(self, mock_hass):
         """Test successful setup."""
         entry = AsyncMock(spec=ConfigEntry)
@@ -56,7 +54,6 @@ class TestInit:
             assert DOMAIN in mock_hass.data
             assert entry.entry_id in mock_hass.data[DOMAIN]
 
-    @pytest.mark.asyncio
     async def test_async_setup_entry_auth_failure(self, mock_hass):
         """Test setup with authentication failure."""
         entry = AsyncMock(spec=ConfigEntry)
@@ -76,7 +73,6 @@ class TestInit:
 
             assert result is False
 
-    @pytest.mark.asyncio
     async def test_async_unload_entry_success(self, mock_hass):
         """Test successful unload."""
         entry = AsyncMock(spec=ConfigEntry)
@@ -90,7 +86,6 @@ class TestInit:
         assert result is True
         assert entry.entry_id not in mock_hass.data[DOMAIN]
 
-    @pytest.mark.asyncio
     async def test_async_unload_entry_failure(self, mock_hass):
         """Test unload failure."""
         entry = AsyncMock(spec=ConfigEntry)
