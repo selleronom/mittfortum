@@ -1,13 +1,12 @@
 [project]
 name = "mittfortum"
-version = "1.0.0"
+version = "3.0.0"
 description = "Home Assistant custom integration for Mittfortum"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "PyJWT",
     "httpx",
-    "python-semantic-release>=10.0.2",
 ]
 
 [project.optional-dependencies]
@@ -79,8 +78,8 @@ branch = "main"
 changelog_file = "CHANGELOG.md"
 build_command = "echo 'No build required'"
 commit_author = "github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
-commit_message = "chore: release v{version}"
-tag_format = "v{version}"
+commit_message = "chore: release {version}"
+tag_format = "{version}"
 upload_to_pypi = false
 upload_to_release = true
 hvcs = "github"
