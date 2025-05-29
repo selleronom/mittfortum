@@ -203,6 +203,10 @@ class FortumAPIClient:
 
     async def _get(self, url: str, retry_count: int = 0) -> Any:
         """Perform authenticated GET request with retry logic for token expiration."""
+        # Limit retry attempts to prevent infinite loops
+        if retry_count > 1:
+            raise APIError(f"Maximum retry attempts ({retry_count}) exceeded for {url}")
+
         await self._ensure_valid_token()
 
         # For tRPC endpoints, use session-based authentication (cookies)
@@ -286,8 +290,12 @@ class FortumAPIClient:
         if response.status_code == 401:
             # Token expired, try to refresh
             _LOGGER.info("Token expired, attempting refresh")
-            await self._auth_client.refresh_access_token()
-            raise APIError("Token expired - retry required")
+            try:
+                await self._auth_client.refresh_access_token()
+                raise APIError("Token expired - retry required")
+            except Exception as refresh_exc:
+                _LOGGER.error("Token refresh failed: %s", refresh_exc)
+                raise APIError(f"Token refresh failed: {refresh_exc}") from refresh_exc
 
         if response.status_code == 403:
             # Forbidden, might need re-authentication

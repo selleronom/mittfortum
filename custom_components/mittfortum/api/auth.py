@@ -349,6 +349,7 @@ class OAuth2AuthClient:
             return await self.authenticate()
 
         try:
+            _LOGGER.debug("Attempting to refresh access token")
             async with get_async_client(self._hass) as client:
                 response = await client.post(
                     APIEndpoints.TOKEN_EXCHANGE,
@@ -361,6 +362,11 @@ class OAuth2AuthClient:
                 )
 
                 if response.status_code != 200:
+                    _LOGGER.error(
+                        "Token refresh failed with status %d: %s",
+                        response.status_code,
+                        response.text,
+                    )
                     raise OAuth2Error(
                         f"Token refresh failed: {response.status_code} {response.text}"
                     )
@@ -368,6 +374,7 @@ class OAuth2AuthClient:
                 token_data = response.json()
                 self._tokens = AuthTokens.from_api_response(token_data)
                 self._token_expiry = time.time() + self._tokens.expires_in
+                _LOGGER.debug("Successfully refreshed access token")
 
                 return self._tokens
 

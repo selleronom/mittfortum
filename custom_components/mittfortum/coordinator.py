@@ -47,8 +47,13 @@ class MittFortumDataCoordinator(DataUpdateCoordinator[list[ConsumptionData]]):
                 data = []
             _LOGGER.debug("Successfully fetched %d consumption records", len(data))
         except APIError as exc:
-            _LOGGER.exception("API error during data update")
-            raise UpdateFailed(f"API error: {exc}") from exc
+            # For authentication errors, provide more specific error message
+            if "Token expired" in str(exc) or "Access forbidden" in str(exc):
+                _LOGGER.error("Authentication error during data update: %s", exc)
+                raise UpdateFailed(f"Authentication error: {exc}") from exc
+            else:
+                _LOGGER.exception("API error during data update")
+                raise UpdateFailed(f"API error: {exc}") from exc
         except Exception as exc:
             _LOGGER.exception("Unexpected error during data update")
             raise UpdateFailed(f"Unexpected error: {exc}") from exc
