@@ -201,8 +201,8 @@ class FortumAPIClient:
         """Get total consumption data for the customer."""
         return await self.get_consumption_data()
 
-    async def _get(self, url: str) -> Any:
-        """Perform authenticated GET request."""
+    async def _get(self, url: str, retry_count: int = 0) -> Any:
+        """Perform authenticated GET request with retry logic for token expiration."""
         await self._ensure_valid_token()
 
         # For tRPC endpoints, use session-based authentication (cookies)
@@ -238,13 +238,22 @@ class FortumAPIClient:
                 )
 
             try:
-                _LOGGER.debug("Making GET request to: %s", url)
+                _LOGGER.debug("Making GET request to: %s (retry: %d)", url, retry_count)
                 _LOGGER.debug(
                     "Request headers: %s",
                     {k: v for k, v in headers.items() if k != "Authorization"},
                 )
                 response = await client.get(url, headers=headers)
                 return await self._handle_response(response)
+            except APIError as exc:
+                # Check if this is a token expiration that was just refreshed
+                if str(exc) == "Token expired - retry required" and retry_count == 0:
+                    _LOGGER.info("Token was refreshed, retrying request to %s", url)
+                    # Retry the request once with the refreshed token
+                    return await self._get(url, retry_count + 1)
+                else:
+                    # Re-raise APIError without wrapping it
+                    raise
             except Exception as exc:
                 _LOGGER.exception("GET request failed for %s", url)
                 raise APIError("GET request failed") from exc

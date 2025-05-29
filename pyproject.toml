@@ -76,7 +76,8 @@ asyncio_default_fixture_loop_scope = "function"
 version_toml = ["pyproject.toml:project.version"]
 version_variables = ["custom_components/mittfortum/manifest.json:version"]
 branch = "main"
-changelog_file = "CHANGELOG.md"
+mode = "update"
+default_templates = { changelog_file = "CHANGELOG.md" }
 build_command = "echo 'No build required'"
 commit_author = "github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
 commit_message = "chore: release {version}"
