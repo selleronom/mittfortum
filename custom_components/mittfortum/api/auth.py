@@ -341,6 +341,13 @@ class OAuth2AuthClient:
         if not self._tokens or not self._tokens.refresh_token:
             raise AuthenticationError("No refresh token available")
 
+        # Handle session-based authentication - can't refresh, need to re-authenticate
+        if self._tokens.refresh_token == "session_based":
+            _LOGGER.debug(
+                "Session-based token detected, performing full re-authentication"
+            )
+            return await self.authenticate()
+
         try:
             async with get_async_client(self._hass) as client:
                 response = await client.post(
