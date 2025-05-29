@@ -88,6 +88,3 @@ hvcs = "github"
 [tool.semantic_release.remote]
 type = "github"
 ignore_token_for_push = false
-
-[tool.semantic_release.publish]
-dist_glob_patterns = ["custom_components/**/*"]
