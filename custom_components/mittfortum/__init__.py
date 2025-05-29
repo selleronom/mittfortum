@@ -3,60 +3,76 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 
-from .api import ConfigurationError, FortumAPI, LoginError  # Import the API class
-from .const import DOMAIN
-from .oauth2_client import OAuth2Client
+from .api import FortumAPIClient, OAuth2AuthClient
+
+if TYPE_CHECKING:
+    from homeassistant.config_entries import ConfigEntry
+    from homeassistant.core import HomeAssistant
+from .const import DOMAIN, PLATFORMS
+from .coordinator import MittFortumDataCoordinator
+from .device import MittFortumDevice
+from .exceptions import AuthenticationError, MittFortumError
 
 _LOGGER = logging.getLogger(__name__)
-PLATFORMS: list[Platform] = [Platform.SENSOR]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up MittFortum from a config entry."""
     hass.data.setdefault(DOMAIN, {})
 
-    # Get the parameters from the config entry
+    # Get credentials from config entry
     username = entry.data[CONF_USERNAME]
     password = entry.data[CONF_PASSWORD]
 
     try:
-        # Initialize OAuth2Client
-        oauth_client = OAuth2Client(
+        # Initialize authentication client
+        auth_client = OAuth2AuthClient(
+            hass=hass,
             username=username,
             password=password,
-            HomeAssistant=hass,
         )
 
-        # Create API instance
-        api = FortumAPI(
-            oauth_client=oauth_client,
-            HomeAssistant=hass,
-        )
+        # Perform initial authentication
+        await auth_client.authenticate()
 
-        # Perform login to obtain session token
-        await oauth_client.login()
+        # Create API client
+        api_client = FortumAPIClient(hass, auth_client)
 
-        # Validate the API connection (and authentication)
-        await api.get_total_consumption()
+        # Get customer ID for device creation
+        customer_id = await api_client.get_customer_id()
+        device = MittFortumDevice(customer_id)
 
-    except LoginError as e:
-        _LOGGER.error("Failed to log in to MittFortum: %s", e)
+        # Create data coordinator
+        coordinator = MittFortumDataCoordinator(hass, api_client)
+
+        # Perform initial data fetch
+        await coordinator.async_config_entry_first_refresh()
+
+        # Store coordinator and device for platforms
+        hass.data[DOMAIN][entry.entry_id] = {
+            "coordinator": coordinator,
+            "device": device,
+            "api_client": api_client,
+        }
+
+        # Forward setup to platforms
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    except AuthenticationError:
+        _LOGGER.exception("Authentication failed for MittFortum")
         return False
-    except ConfigurationError as e:
-        _LOGGER.error("Invalid configuration for MittFortum: %s", e)
+    except MittFortumError:
+        _LOGGER.exception("Setup failed for MittFortum")
         return False
-
-    # Store an API object for your platforms to access
-    hass.data[DOMAIN][entry.entry_id] = api
-
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-
-    return True
+    except Exception:
+        _LOGGER.exception("Unexpected error setting up MittFortum")
+        return False
+    else:
+        return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

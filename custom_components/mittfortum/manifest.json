@@ -8,8 +8,8 @@
   "homekit": {},
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/selleronom/mittfortum/issues",
-  "requirements": [],
+  "requirements": ["PyJWT>=2.4.0"],
   "ssdp": [],
-  "version": "2.1.1",
+  "version": "3.0.0",
   "zeroconf": []
 }

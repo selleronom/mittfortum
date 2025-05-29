@@ -1,0 +1,85 @@
+[project]
+name = "mittfortum"
+version = "3.0.0"
+description = "Home Assistant custom integration for Mittfortum"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "PyJWT",
+    "httpx",
+]
+
+[project.optional-dependencies]
+dev = [
+    "homeassistant",
+    "mypy",
+    "pytest",
+    "pytest-asyncio",
+    "pytest-cov",
+    "pre-commit",
+    "ruff",
+    "python-semantic-release",
+]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 88
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+]
+ignore = []
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.13"
+strict = false
+warn_unreachable = false
+warn_unused_ignores = true
+warn_redundant_casts = true
+show_error_codes = true
+explicit_package_bases = true
+disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+pythonpath = ["."]
+addopts = [
+    "-v",
+    "--tb=short",
+    "--strict-markers",
+    "--strict-config",
+    "--asyncio-mode=auto",
+]
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests",
+    "slow: Slow running tests",
+]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]
+branch = "main"
+changelog_file = "CHANGELOG.md"
+build_command = "echo 'No build required'"
+commit_author = "github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
+commit_message = "chore: release v{version}"
+tag_format = "v{version}"
+upload_to_pypi = false
+upload_to_release = true
+hvcs = "github"
