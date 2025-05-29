@@ -1,6 +1,6 @@
 [project]
 name = "mittfortum"
-version = "0.1.0"
+version = "3.0.0"
 description = "Home Assistant custom integration for Mittfortum"
 readme = "README.md"
 requires-python = ">=3.13"
