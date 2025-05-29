@@ -14,14 +14,20 @@ A Home Assistant custom integration for accessing energy consumption data from F
 
 ### HACS (Recommended)
 
-1. Add this repository as a custom repository in HACS
-2. Search for "MittFortum" in HACS
-3. Install the integration
-4. Restart Home Assistant
+ This integration is not yet available in the default HACS repositories, but you can add it as a custom repository:
+
+1. Open HACS in Home Assistant
+2. Click on the 3 dots in the top right corner
+3. Select "Custom repositories"
+4. Add the repository URL: `https://github.com/selleronom/mittfortum`
+5. Select "Integration" as the category
+6. Click the "ADD" button
+7. Search for "MittFortum" in HACS and install it
+8. Restart Home Assistant
 
 ### Manual Installation
 
-1. Download the latest release
+1. Download the latest release from the [releases page](https://github.com/selleronom/mittfortum/releases)
 2. Copy the `custom_components/mittfortum` directory to your Home Assistant `custom_components` directory
 3. Restart Home Assistant
 
