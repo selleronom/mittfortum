@@ -1,6 +1,6 @@
 """Unit tests for FortumAPIClient."""
 
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
@@ -165,3 +165,257 @@ class TestFortumAPIClient:
         with patch.object(mock_auth_client, "authenticate") as mock_auth:
             await client._ensure_valid_token()
             mock_auth.assert_called_once()
+
+    async def test_trpc_endpoints_exclude_auth_headers(
+        self, mock_hass, mock_auth_client
+    ):
+        """Test that tRPC endpoints do NOT receive Authorization headers."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        mock_auth_client.access_token = "test_access_token_123"
+        mock_auth_client.session_cookies = {"sessionid": "test_session"}
+        mock_auth_client.is_token_expired.return_value = False
+
+        client = FortumAPIClient(mock_hass, mock_auth_client)
+
+        # Test tRPC endpoint
+        trpc_url = (
+            "https://www.fortum.com/se/el/api/trpc/loggedIn.timeSeries.listTimeSeries"
+        )
+
+        with patch(
+            "custom_components.mittfortum.api.client.get_async_client"
+        ) as mock_get_client:
+            # Create a properly configured mock client
+            mock_client = AsyncMock()
+
+            # Mock the response with concrete values
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.text = '{"test": "data"}'  # Non-empty text
+            mock_response.json.return_value = [
+                {"result": {"data": {"json": {"test": "data"}}}}
+            ]
+
+            mock_client.get.return_value = mock_response
+            mock_client.cookies = MagicMock()
+
+            # Configure the context manager
+            mock_get_client.return_value.__aenter__.return_value = mock_client
+            mock_get_client.return_value.__aexit__.return_value = None
+
+            # Make the request
+            await client._get(trpc_url)
+
+            # Verify the call was made
+            assert mock_client.get.called
+            call_args = mock_client.get.call_args
+
+            # Check that Authorization header was NOT included
+            headers = call_args[1]["headers"]
+            assert "Authorization" not in headers
+
+    async def test_non_trpc_endpoints_include_auth_headers(
+        self, mock_hass, mock_auth_client
+    ):
+        """Test that non-tRPC endpoints DO receive Authorization headers."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        mock_auth_client.access_token = "test_access_token_123"
+        mock_auth_client.session_cookies = {"sessionid": "test_session"}
+        mock_auth_client.is_token_expired.return_value = False
+
+        client = FortumAPIClient(mock_hass, mock_auth_client)
+
+        # Test non-tRPC endpoint
+        api_url = "https://www.fortum.com/se/el/api/some-other-endpoint"
+
+        with patch(
+            "custom_components.mittfortum.api.client.get_async_client"
+        ) as mock_get_client:
+            # Create a properly configured mock client
+            mock_client = AsyncMock()
+
+            # Mock the response with concrete values
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.text = '{"test": "data"}'  # Non-empty text
+            mock_response.json.return_value = {"test": "data"}
+
+            mock_client.get.return_value = mock_response
+            mock_client.cookies = MagicMock()
+
+            # Configure the context manager
+            mock_get_client.return_value.__aenter__.return_value = mock_client
+            mock_get_client.return_value.__aexit__.return_value = None
+
+            # Make the request
+            await client._get(api_url)
+
+            # Verify the call was made
+            assert mock_client.get.called
+            call_args = mock_client.get.call_args
+
+            # Check that Authorization header was included
+            headers = call_args[1]["headers"]
+            assert "Authorization" in headers
+            assert headers["Authorization"] == "Bearer test_access_token_123"
+
+    async def test_session_endpoints_exclude_auth_headers(
+        self, mock_hass, mock_auth_client
+    ):
+        """Test that session endpoints do NOT receive Authorization headers."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        mock_auth_client.access_token = "test_access_token_123"
+        mock_auth_client.session_cookies = {"sessionid": "test_session"}
+        mock_auth_client.is_token_expired.return_value = False
+
+        client = FortumAPIClient(mock_hass, mock_auth_client)
+
+        # Test session endpoint
+        session_url = "https://www.fortum.com/se/el/api/auth/session"
+
+        with patch(
+            "custom_components.mittfortum.api.client.get_async_client"
+        ) as mock_get_client:
+            # Create a properly configured mock client
+            mock_client = AsyncMock()
+
+            # Mock the response with concrete values
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.text = '{"user": {"test": "data"}}'  # Non-empty text
+            mock_response.json.return_value = {"user": {"test": "data"}}
+
+            mock_client.get.return_value = mock_response
+            mock_client.cookies = MagicMock()
+
+            # Configure the context manager
+            mock_get_client.return_value.__aenter__.return_value = mock_client
+            mock_get_client.return_value.__aexit__.return_value = None
+
+            # Make the request
+            await client._get(session_url)
+
+            # Verify the call was made
+            assert mock_client.get.called
+            call_args = mock_client.get.call_args
+
+            # Check that Authorization header was NOT included
+            headers = call_args[1]["headers"]
+            assert "Authorization" not in headers
+
+    async def test_trpc_endpoint_no_auth_header(self, mock_hass, mock_auth_client):
+        """Test that tRPC endpoints do NOT receive Authorization headers."""
+        mock_auth_client.access_token = "test_access_token_123"
+        mock_auth_client.session_cookies = {"sessionid": "test_session"}
+        mock_auth_client.is_token_expired.return_value = False
+
+        client = FortumAPIClient(mock_hass, mock_auth_client)
+
+        # tRPC endpoint URL
+        trpc_url = (
+            "https://www.fortum.com/se/el/api/trpc/"
+            "loggedIn.timeSeries.listTimeSeries?batch=1&input="
+            "%7B%220%22%3A%7B%22json%22%3A%7B%22meteringPointNo%22%3A%5B%22123%22%5D%7D%7D%7D"
+        )
+
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.text = '{"test": "data"}'
+        mock_response.json.return_value = [
+            {"result": {"data": {"json": {"test": "data"}}}}
+        ]
+
+        with patch(
+            "custom_components.mittfortum.api.client.get_async_client"
+        ) as mock_get_client:
+            mock_client = AsyncMock()
+            mock_client.get.return_value = mock_response
+            mock_client.cookies = {}
+
+            mock_get_client.return_value.__aenter__.return_value = mock_client
+            mock_get_client.return_value.__aexit__.return_value = None
+
+            result = await client._get(trpc_url)
+
+            # Verify Authorization header was NOT included
+            call_args = mock_client.get.call_args
+            headers = call_args[1]["headers"]
+            assert "Authorization" not in headers
+
+            # Verify we got the expected result
+            assert result == mock_response
+
+    async def test_non_trpc_endpoint_gets_auth_header(
+        self, mock_hass, mock_auth_client
+    ):
+        """Test that non-tRPC endpoints DO receive Authorization headers."""
+        mock_auth_client.access_token = "test_access_token_123"
+        mock_auth_client.session_cookies = {"sessionid": "test_session"}
+        mock_auth_client.is_token_expired.return_value = False
+
+        client = FortumAPIClient(mock_hass, mock_auth_client)
+
+        # Non-tRPC API endpoint
+        api_url = "https://www.fortum.com/se/el/api/some-other-endpoint"
+
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.text = '{"test": "data"}'
+        mock_response.json.return_value = {"test": "data"}
+
+        with patch(
+            "custom_components.mittfortum.api.client.get_async_client"
+        ) as mock_get_client:
+            mock_client = AsyncMock()
+            mock_client.get.return_value = mock_response
+            mock_client.cookies = {}
+
+            mock_get_client.return_value.__aenter__.return_value = mock_client
+            mock_get_client.return_value.__aexit__.return_value = None
+
+            await client._get(api_url)
+
+            # Verify Authorization header was included
+            call_args = mock_client.get.call_args
+            headers = call_args[1]["headers"]
+            assert "Authorization" in headers
+            assert headers["Authorization"] == "Bearer test_access_token_123"
+
+    async def test_retry_logic_prevents_infinite_loop(
+        self, mock_hass, mock_auth_client
+    ):
+        """Test that retry logic allows exactly 1 retry and prevents infinite loops."""
+        mock_auth_client.access_token = "test_access_token_123"
+        mock_auth_client.session_cookies = {"sessionid": "test_session"}
+        mock_auth_client.is_token_expired.return_value = False
+        mock_auth_client.refresh_access_token = AsyncMock()
+
+        client = FortumAPIClient(mock_hass, mock_auth_client)
+
+        call_count = 0
+
+        # Mock the _handle_response method to always raise TOKEN_EXPIRED_RETRY_MSG
+        async def mock_handle_response(response):
+            nonlocal call_count
+            call_count += 1
+            # Always simulate token expiry to test retry logic
+            raise APIError("Token expired - retry required")
+
+        with patch.object(client, "_handle_response", side_effect=mock_handle_response):
+            with patch(
+                "homeassistant.helpers.httpx_client.get_async_client"
+            ) as mock_get_client:
+                mock_client = AsyncMock()
+                mock_client.cookies = {}
+                mock_get_client.return_value.__aenter__.return_value = mock_client
+                mock_get_client.return_value.__aexit__.return_value = None
+
+                # This should fail after exactly 2 attempts (original + 1 retry)
+                with pytest.raises(APIError, match="Token expired - retry required"):
+                    await client._get("https://www.fortum.com/se/el/api/test")
+
+                # Verify exactly 2 calls were made (no infinite loop)
+                assert call_count == 2

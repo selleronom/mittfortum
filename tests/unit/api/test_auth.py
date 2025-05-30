@@ -207,3 +207,49 @@ class TestOAuth2AuthClient:
             # Verify tokens were updated
             assert result.access_token == "new_access_token"
             assert result.refresh_token == "new_refresh_token"
+
+    async def test_session_propagation_delay(self, mock_hass):
+        """Test that session verification includes delay for server propagation."""
+        client = OAuth2AuthClient(
+            hass=mock_hass,
+            username="test@example.com",
+            password="test_password",
+        )
+
+        # Mock session data response
+        mock_session_data = {
+            "user": {
+                "id": "test_user",
+                "accessToken": "test_access_token",
+                "customerId": "12345",
+            }
+        }
+
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = mock_session_data
+
+        mock_client = AsyncMock()
+        mock_client.get.return_value = mock_response
+
+        with patch(
+            "custom_components.mittfortum.api.auth.get_async_client"
+        ) as mock_get_client:
+            mock_get_client.return_value.__aenter__.return_value = mock_client
+            mock_get_client.return_value.__aexit__.return_value = None
+
+            # Mock asyncio.sleep to verify it's called
+            with patch(
+                "custom_components.mittfortum.api.auth.asyncio.sleep"
+            ) as mock_sleep:
+                mock_sleep.return_value = None
+
+                # Call _verify_session_established
+                result = await client._verify_session_established(mock_client)
+
+                # Verify the delay was added (now 0.3s for better propagation)
+                mock_sleep.assert_called_once_with(0.3)
+
+                # Verify session data was returned correctly
+                assert result == mock_session_data
+                assert result["user"]["id"] == "test_user"
