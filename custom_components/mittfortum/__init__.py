@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING
 
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
+from homeassistant.exceptions import ConfigEntryNotReady
 
 from .api import FortumAPIClient, OAuth2AuthClient
 
@@ -49,8 +51,33 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Create data coordinator
         coordinator = MittFortumDataCoordinator(hass, api_client)
 
-        # Perform initial data fetch
-        await coordinator.async_config_entry_first_refresh()
+        # Perform initial data fetch with retry for session propagation issues
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                await coordinator.async_config_entry_first_refresh()
+                break
+            except ConfigEntryNotReady as exc:
+                if (
+                    "Authentication error" in str(exc)
+                    and "Token expired" in str(exc)
+                    and attempt < max_retries - 1
+                ):
+                    _LOGGER.warning(
+                        "Initial authentication failed (attempt %d/%d), "
+                        "retrying after delay due to potential session "
+                        "propagation issue: %s",
+                        attempt + 1,
+                        max_retries,
+                        exc,
+                    )
+                    # Add delay to allow session propagation
+                    await asyncio.sleep(1.0 * (attempt + 1))
+                    continue
+                else:
+                    # Re-raise the exception if it's not a retry-able auth error
+                    # or we've exhausted retries
+                    raise
 
         # Store coordinator and device for platforms
         hass.data[DOMAIN][entry.entry_id] = {

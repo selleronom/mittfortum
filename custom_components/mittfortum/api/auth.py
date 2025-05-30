@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -334,6 +335,10 @@ class OAuth2AuthClient:
             raise OAuth2Error("No user data in session")
 
         _LOGGER.debug("Session verified successfully")
+
+        # Give the server more time to propagate the session for better reliability
+        await asyncio.sleep(0.3)
+
         return session_data
 
     async def refresh_access_token(self) -> AuthTokens:

@@ -26,6 +26,9 @@ def mock_hass():
     hass.config_entries.async_setup = AsyncMock(return_value=True)
     hass.config_entries.async_unload = AsyncMock(return_value=True)
     hass.async_block_till_done = AsyncMock()
+    # Add bus for httpx_client compatibility
+    hass.bus = MagicMock()
+    hass.bus.async_listen_once = MagicMock()
     return hass
 
 
