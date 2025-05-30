@@ -209,28 +209,6 @@ class FortumAPIClient:
 
         await self._ensure_valid_token()
 
-        # For tRPC endpoints, use session-based authentication (cookies)
-        # For session endpoints, use session-based authentication
-        # (no explicit auth header)
-        headers = {
-            "Accept": "application/json",
-            "User-Agent": (
-                "Mozilla/5.0 (X11; Linux x86_64; rv:138.0) Gecko/20100101 Firefox/138.0"
-            ),
-            "Content-Type": "application/json",
-            "Referer": "https://www.fortum.com/se/el/inloggad/el",
-        }
-
-        # Only add Authorization header for non-session endpoints
-        # if we have an access token
-        if (
-            "/api/trpc/" not in url
-            and "/api/auth/session" not in url
-            and self._auth_client.access_token
-            and self._auth_client.access_token != "session_based"
-        ):
-            headers["Authorization"] = f"Bearer {self._auth_client.access_token}"
-
         async with get_async_client(self._hass) as client:
             # Add session cookies if available
             if self._auth_client.session_cookies:
@@ -242,6 +220,29 @@ class FortumAPIClient:
                 )
 
             try:
+                # Build headers fresh for each attempt to include updated tokens
+                headers = {
+                    "Accept": "application/json",
+                    "User-Agent": (
+                        "Mozilla/5.0 (X11; Linux x86_64; rv:138.0) "
+                        "Gecko/20100101 Firefox/138.0"
+                    ),
+                    "Content-Type": "application/json",
+                    "Referer": "https://www.fortum.com/se/el/inloggad/el",
+                }
+
+                # Only add Authorization header for non-session endpoints
+                # if we have an access token
+                if (
+                    "/api/trpc/" not in url
+                    and "/api/auth/session" not in url
+                    and self._auth_client.access_token
+                    and self._auth_client.access_token != "session_based"
+                ):
+                    headers["Authorization"] = (
+                        f"Bearer {self._auth_client.access_token}"
+                    )
+
                 _LOGGER.debug("Making GET request to: %s (retry: %d)", url, retry_count)
                 _LOGGER.debug(
                     "Request headers: %s",
@@ -255,8 +256,13 @@ class FortumAPIClient:
                     _LOGGER.info("Token was refreshed, retrying request to %s", url)
                     # Retry the request once with the refreshed token
                     return await self._get(url, retry_count + 1)
+                elif "Authentication failed" in str(exc):
+                    # If authentication completely failed, don't retry
+                    _LOGGER.error("Authentication failed, cannot retry: %s", exc)
+                    raise
                 else:
                     # Re-raise APIError without wrapping it
+                    _LOGGER.debug("API error (no retry): %s", exc)
                     raise
             except Exception as exc:
                 _LOGGER.exception("GET request failed for %s", url)
@@ -292,10 +298,14 @@ class FortumAPIClient:
             _LOGGER.info("Token expired, attempting refresh")
             try:
                 await self._auth_client.refresh_access_token()
+                _LOGGER.debug("Token refresh successful, signaling retry")
                 raise APIError("Token expired - retry required")
             except Exception as refresh_exc:
                 _LOGGER.error("Token refresh failed: %s", refresh_exc)
-                raise APIError(f"Token refresh failed: {refresh_exc}") from refresh_exc
+                # If refresh fails, we need to re-authenticate
+                raise APIError(
+                    "Authentication failed - re-authentication required"
+                ) from refresh_exc
 
         if response.status_code == 403:
             # Forbidden, might need re-authentication
