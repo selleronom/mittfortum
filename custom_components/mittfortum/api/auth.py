@@ -336,8 +336,23 @@ class OAuth2AuthClient:
 
         _LOGGER.debug("Session verified successfully")
 
-        # Give the server more time to propagate the session for better reliability
-        await asyncio.sleep(0.3)
+        # Give the server time to propagate the session for better reliability
+        # Increased from 0.3s to 3.0s for better session propagation
+        _LOGGER.debug("Waiting for session propagation (3.0s)")
+        await asyncio.sleep(3.0)
+
+        # Perform a non-blocking session validation check for informational purposes
+        # This is purely for logging and won't fail authentication if it doesn't work
+        # since the session often takes additional time to propagate across endpoints
+        validation_success = await self._validate_session_against_api(client)
+        if validation_success:
+            _LOGGER.debug("Session validation check passed - session is ready")
+        else:
+            _LOGGER.info(
+                "Session validation check failed during authentication, but this is "
+                "normal due to session propagation delays. Session will be available "
+                "for API calls shortly."
+            )
 
         return session_data
 
@@ -581,3 +596,27 @@ class OAuth2AuthClient:
             )
 
         return AuthTokens.from_api_response(response.json())
+
+    async def _validate_session_against_api(self, client) -> bool:
+        """Validate that the session works against actual API endpoints."""
+        try:
+            # Test against the session endpoint that the client actually uses
+            test_url = "https://www.fortum.com/se/el/api/auth/session"
+            response = await client.get(test_url)
+
+            if response.status_code == 200:
+                _LOGGER.debug("Session validation against API successful")
+                return True
+            elif response.status_code == 401:
+                _LOGGER.warning(
+                    "Session validation failed with 401 - session not ready"
+                )
+                return False
+            else:
+                _LOGGER.warning(
+                    "Session validation returned status %d", response.status_code
+                )
+                return False
+        except Exception as exc:
+            _LOGGER.warning("Session validation failed with exception: %s", exc)
+            return False

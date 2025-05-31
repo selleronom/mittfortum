@@ -244,11 +244,18 @@ class TestOAuth2AuthClient:
             ) as mock_sleep:
                 mock_sleep.return_value = None
 
-                # Call _verify_session_established
-                result = await client._verify_session_established(mock_client)
+                # Mock the session validation method (non-blocking now)
+                with patch.object(
+                    client, "_validate_session_against_api", return_value=False
+                ):
+                    # Call _verify_session_established
+                    result = await client._verify_session_established(mock_client)
 
-                # Verify the delay was added (now 0.3s for better propagation)
-                mock_sleep.assert_called_once_with(0.3)
+                    # Verify the initial delay was added (now 3.0s for better
+                    # propagation)
+                    sleep_calls = mock_sleep.call_args_list
+                    assert len(sleep_calls) >= 1
+                    assert sleep_calls[0][0][0] == 3.0  # First call should be 3.0s
 
                 # Verify session data was returned correctly
                 assert result == mock_session_data

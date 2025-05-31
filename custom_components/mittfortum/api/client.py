@@ -207,8 +207,12 @@ class FortumAPIClient:
 
     async def _get(self, url: str, retry_count: int = 0) -> Any:
         """Perform authenticated GET request with retry logic."""
-        # Allow maximum 1 retry (2 total attempts)
-        max_retries = 2
+        # Allow maximum retries based on auth type:
+        # - Session-based: 4 total attempts (3 retries)
+        # - OAuth tokens: 2 total attempts (1 retry)
+        is_session_based = self._auth_client.refresh_token == "session_based"
+        max_retries = 4 if is_session_based else 2
+
         if retry_count >= max_retries:
             raise APIError(f"Maximum retry attempts ({max_retries}) exceeded for {url}")
 
@@ -268,19 +272,30 @@ class FortumAPIClient:
     ) -> Any:
         """Handle retry logic for API errors."""
         # Check if this is a token expiration that can be retried
-        # Only allow exactly 1 retry (so max retry_count is 0)
-        if str(exc) == TOKEN_EXPIRED_RETRY_MSG and retry_count == 0:
+        # Allow up to 3 retries for session-based auth, 1 retry for OAuth tokens
+        is_session_based = self._auth_client.refresh_token == "session_based"
+        max_retries_for_token_error = 3 if is_session_based else 1
+
+        if (
+            str(exc) == TOKEN_EXPIRED_RETRY_MSG
+            and retry_count < max_retries_for_token_error
+        ):
+            # Calculate exponential backoff delay
+            base_delay = 0.5 if is_session_based else 0.1
+            delay = base_delay * (2**retry_count)  # 0.5s, 1.0s, 2.0s for session
+
             _LOGGER.info(
-                "Token was refreshed, retrying request to %s (attempt %d)",
+                "Token was refreshed, retrying request to %s "
+                "(attempt %d/%d) after %ss delay",
                 url,
                 retry_count + 1,
+                max_retries_for_token_error,
+                delay,
             )
 
-            # For session-based auth, add delay for propagation
-            if self._auth_client.refresh_token == "session_based":
-                delay = 0.1  # Small delay for session propagation
-                _LOGGER.debug("Adding %s second delay for session propagation", delay)
-                await asyncio.sleep(delay)
+            # Add delay for session propagation with exponential backoff
+            _LOGGER.debug("Adding %s second delay for session propagation", delay)
+            await asyncio.sleep(delay)
 
             # Retry the request with the refreshed token
             return await self._get(url, retry_count + 1)
@@ -320,10 +335,18 @@ class FortumAPIClient:
 
         if response.status_code == 401:
             # Token expired, try to refresh
-            _LOGGER.info("Token expired, attempting refresh")
+            _LOGGER.info("Token expired (401), attempting refresh")
             try:
+                old_token = self._auth_client.access_token
                 await self._auth_client.refresh_access_token()
-                _LOGGER.debug("Token refresh successful, signaling retry")
+                new_token = self._auth_client.access_token
+
+                _LOGGER.debug(
+                    "Token refresh completed. Old token: %s..., New token: %s...",
+                    old_token[:20] if old_token else "None",
+                    new_token[:20] if new_token else "None",
+                )
+
                 # Signal retry by raising specific exception
                 raise APIError(TOKEN_EXPIRED_RETRY_MSG)
             except APIError as api_exc:
