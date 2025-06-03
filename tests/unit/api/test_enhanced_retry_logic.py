@@ -14,7 +14,7 @@ class TestEnhancedRetryLogic:
     async def test_session_based_auth_allows_multiple_retries(
         self, mock_hass, mock_auth_client
     ):
-        """Test that session-based auth allows up to 3 retries."""
+        """Test that session-based auth allows up to 4 retries."""
         client = FortumAPIClient(mock_hass, mock_auth_client)
 
         # Mock session-based authentication
@@ -25,10 +25,10 @@ class TestEnhancedRetryLogic:
         async def mock_handle_response(response):
             nonlocal call_count
             call_count += 1
-            if call_count <= 3:  # Fail first 3 attempts
+            if call_count <= 4:  # Fail first 4 attempts
                 raise APIError("Token expired - retry required")
             else:
-                # 4th attempt succeeds
+                # 5th attempt succeeds
                 return {"success": True}
 
         with patch.object(client, "_ensure_valid_token", new_callable=AsyncMock):
@@ -44,14 +44,14 @@ class TestEnhancedRetryLogic:
 
                     result = await client._get("https://example.com/api/test")
 
-                    # Should succeed after 3 retries (4 total attempts)
+                    # Should succeed after 4 retries (5 total attempts)
                     assert result == {"success": True}
-                    assert call_count == 4
+                    assert call_count == 5
 
     async def test_session_based_auth_exponential_backoff(
         self, mock_hass, mock_auth_client
     ):
-        """Test that session-based auth uses exponential backoff delays."""
+        """Test that session-based auth uses progressive delays."""
         client = FortumAPIClient(mock_hass, mock_auth_client)
 
         # Mock session-based authentication
@@ -79,8 +79,8 @@ class TestEnhancedRetryLogic:
                         # Should succeed after 1 retry
                         assert result == {"success": True}
 
-                        # Verify exponential backoff was used (0.5s for first retry)
-                        mock_sleep.assert_called_once_with(0.5)
+                        # Verify progressive delay was used (5.0s for first retry)
+                        mock_sleep.assert_called_once_with(5.0)
 
     async def test_oauth_token_still_allows_only_one_retry(
         self, mock_hass, mock_auth_client
@@ -143,7 +143,7 @@ class TestEnhancedRetryLogic:
                     mock_get_client.return_value.__aenter__.return_value = mock_client
                     mock_client.get.return_value = Mock()
 
-                    # Should raise after 3 retries (4 total attempts)
+                    # Should raise after 4 retries (5 total attempts)
                     with pytest.raises(
                         APIError, match="Token expired - retry required"
                     ):
@@ -152,7 +152,7 @@ class TestEnhancedRetryLogic:
     async def test_session_based_auth_different_delays_per_retry(
         self, mock_hass, mock_auth_client
     ):
-        """Test that session-based auth uses increasing delays."""
+        """Test that session-based auth uses progressive delays."""
         client = FortumAPIClient(mock_hass, mock_auth_client)
 
         # Mock session-based authentication
@@ -188,8 +188,8 @@ class TestEnhancedRetryLogic:
                         # Should succeed after 2 retries
                         assert result == {"success": True}
 
-                        # Verify exponential backoff: 0.5s, then 1.0s
-                        expected_calls = [0.5, 1.0]
+                        # Verify progressive delays: 5.0s, then 10.0s
+                        expected_calls = [5.0, 10.0]
                         actual_calls = [
                             call[0][0] for call in mock_sleep.call_args_list
                         ]

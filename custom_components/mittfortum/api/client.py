@@ -201,6 +201,30 @@ class FortumAPIClient:
 
         return consumption_data
 
+    def _get_cookie_domain(self, cookie_name: str) -> str:
+        """Determine the correct domain for a cookie based on its name.
+
+        Args:
+            cookie_name: Name of the cookie
+
+        Returns:
+            Appropriate domain for the cookie
+        """
+        # SSO-related cookies go to sso.fortum.com domain
+        if cookie_name in ("amlbcookie", "18dddeef3f61363"):
+            return ".sso.fortum.com"
+
+        # Main site cookies (security prefixed and locale) go to main domain
+        if (
+            cookie_name.startswith("__Host-")
+            or cookie_name.startswith("__Secure-")
+            or cookie_name == "NEXT_LOCALE"
+        ):
+            return "www.fortum.com"
+
+        # Default to main domain for any other cookies
+        return "www.fortum.com"
+
     async def get_total_consumption(self) -> list[ConsumptionData]:
         """Get total consumption data for the customer."""
         return await self.get_consumption_data()
@@ -208,10 +232,10 @@ class FortumAPIClient:
     async def _get(self, url: str, retry_count: int = 0) -> Any:
         """Perform authenticated GET request with retry logic."""
         # Allow maximum retries based on auth type:
-        # - Session-based: 4 total attempts (3 retries)
+        # - Session-based: 5 total attempts (4 retries)
         # - OAuth tokens: 2 total attempts (1 retry)
         is_session_based = self._auth_client.refresh_token == "session_based"
-        max_retries = 4 if is_session_based else 2
+        max_retries = 5 if is_session_based else 2
 
         if retry_count >= max_retries:
             raise APIError(f"Maximum retry attempts ({max_retries}) exceeded for {url}")
@@ -222,7 +246,27 @@ class FortumAPIClient:
             # Add session cookies if available
             if self._auth_client.session_cookies:
                 for name, value in self._auth_client.session_cookies.items():
-                    client.cookies[name] = value
+                    # Determine the correct domain for this cookie
+                    domain = self._get_cookie_domain(name)
+
+                    # Use .set() method for real httpx clients, fallback to dict access
+                    # for tests
+                    if hasattr(client.cookies, "set"):
+                        client.cookies.set(name, value, domain=domain)
+                        _LOGGER.debug(
+                            "Added cookie to request: %s=%s... (domain=%s)",
+                            name,
+                            value[:20] if len(value) > 20 else value,
+                            domain,
+                        )
+                    else:
+                        # Fallback for test mocks that use plain dict
+                        client.cookies[name] = value
+                        _LOGGER.debug(
+                            "Added cookie to request: %s=%s...",
+                            name,
+                            value[:20] if len(value) > 20 else value,
+                        )
                 _LOGGER.debug(
                     "Added %d session cookies to request",
                     len(self._auth_client.session_cookies),
@@ -272,17 +316,26 @@ class FortumAPIClient:
     ) -> Any:
         """Handle retry logic for API errors."""
         # Check if this is a token expiration that can be retried
-        # Allow up to 3 retries for session-based auth, 1 retry for OAuth tokens
+        # Allow up to 4 retries for session-based auth, 1 retry for OAuth tokens
+        # Increased from 3 to 4 retries for session-based auth due to
+        # session propagation delays
         is_session_based = self._auth_client.refresh_token == "session_based"
-        max_retries_for_token_error = 3 if is_session_based else 1
+        max_retries_for_token_error = 4 if is_session_based else 1
 
         if (
             str(exc) == TOKEN_EXPIRED_RETRY_MSG
             and retry_count < max_retries_for_token_error
         ):
-            # Calculate exponential backoff delay
-            base_delay = 0.5 if is_session_based else 0.1
-            delay = base_delay * (2**retry_count)  # 0.5s, 1.0s, 2.0s for session
+            # Calculate progressive delay for session propagation
+            # Use much longer delays for session-based auth due to
+            # server-side propagation time
+            if is_session_based:
+                # Progressive delays: 5s, 10s, 15s, 20s (total ~50s)
+                # This accounts for session propagation across different API endpoints
+                delay = 5.0 + (retry_count * 5.0)
+            else:
+                # Standard exponential backoff for OAuth tokens
+                delay = 0.1 * (2**retry_count)
 
             _LOGGER.info(
                 "Token was refreshed, retrying request to %s "
@@ -329,79 +382,101 @@ class FortumAPIClient:
         except (ValueError, KeyError, IndexError) as exc:
             raise InvalidResponseError(f"Failed to parse tRPC response: {exc}") from exc
 
+    def _handle_redirect_response(self, response) -> None:
+        """Handle redirect responses (307)."""
+        location = response.headers.get("Location", "")
+        _LOGGER.debug("Received 307 redirect to: %s", location)
+
+        # Check if this is a session expiration redirect
+        if "sign-out" in location and "TokenExpired" in location:
+            _LOGGER.warning("Session expired - TokenExpired redirect detected")
+            # For session-based auth, we need to re-authenticate completely
+            # Signal retry by raising specific exception
+            raise APIError(TOKEN_EXPIRED_RETRY_MSG)
+
+        # Handle other redirects
+        _LOGGER.warning("Unexpected redirect to: %s", location)
+        raise APIError(f"Unexpected redirect to: {location}")
+
+    async def _handle_unauthorized_response(self) -> None:
+        """Handle 401 unauthorized responses."""
+        _LOGGER.info("Token expired (401), attempting refresh")
+        try:
+            old_token = self._auth_client.access_token
+            await self._auth_client.refresh_access_token()
+            new_token = self._auth_client.access_token
+
+            _LOGGER.debug(
+                "Token refresh completed. Old token: %s..., New token: %s...",
+                old_token[:20] if old_token else "None",
+                new_token[:20] if new_token else "None",
+            )
+
+            # Signal retry by raising specific exception
+            raise APIError(TOKEN_EXPIRED_RETRY_MSG)
+        except APIError as api_exc:
+            # If this is our retry signal, re-raise it
+            if TOKEN_EXPIRED_RETRY_MSG in str(api_exc):
+                raise
+            # Otherwise it's a real refresh failure
+            _LOGGER.error("Token refresh failed: %s", api_exc)
+            raise APIError(
+                "Authentication failed - re-authentication required"
+            ) from api_exc
+        except Exception as refresh_exc:
+            _LOGGER.error("Token refresh failed: %s", refresh_exc)
+            # If refresh fails, we need to re-authenticate
+            raise APIError(
+                "Authentication failed - re-authentication required"
+            ) from refresh_exc
+
+    def _handle_server_error_response(self, response) -> None:
+        """Handle 500 server error responses."""
+        # Check if it's a tRPC error with specific format
+        try:
+            error_data = response.json()
+            if isinstance(error_data, list) and len(error_data) > 0:
+                error_item = error_data[0]
+                if "error" in error_item:
+                    error_details = error_item["error"]
+                    if "json" in error_details:
+                        json_error = error_details["json"]
+                        error_msg = json_error.get("message", "Unknown error")
+                        error_code = json_error.get("code", "Unknown")
+                        _LOGGER.error(
+                            "Server error (tRPC): %s (code: %s)",
+                            error_msg,
+                            error_code,
+                        )
+                        # For INTERNAL_SERVER_ERROR, suggest reducing date range
+                        if error_msg == "INTERNAL_SERVER_ERROR":
+                            raise APIError(
+                                "Server error - try reducing date range "
+                                "or changing resolution"
+                            )
+                        else:
+                            raise APIError(f"Server error: {error_msg}")
+        except (ValueError, KeyError):
+            pass  # Fall through to generic handling
+
+        _LOGGER.error("Server error (500): %s", response.text)
+        raise APIError("Server internal error - try again later")
+
     async def _handle_response(self, response) -> Any:
         """Handle API response with error checking."""
         _LOGGER.debug("Response status: %s", response.status_code)
 
-        if response.status_code == 401:
-            # Token expired, try to refresh
-            _LOGGER.info("Token expired (401), attempting refresh")
-            try:
-                old_token = self._auth_client.access_token
-                await self._auth_client.refresh_access_token()
-                new_token = self._auth_client.access_token
-
-                _LOGGER.debug(
-                    "Token refresh completed. Old token: %s..., New token: %s...",
-                    old_token[:20] if old_token else "None",
-                    new_token[:20] if new_token else "None",
-                )
-
-                # Signal retry by raising specific exception
-                raise APIError(TOKEN_EXPIRED_RETRY_MSG)
-            except APIError as api_exc:
-                # If this is our retry signal, re-raise it
-                if TOKEN_EXPIRED_RETRY_MSG in str(api_exc):
-                    raise
-                # Otherwise it's a real refresh failure
-                _LOGGER.error("Token refresh failed: %s", api_exc)
-                raise APIError(
-                    "Authentication failed - re-authentication required"
-                ) from api_exc
-            except Exception as refresh_exc:
-                _LOGGER.error("Token refresh failed: %s", refresh_exc)
-                # If refresh fails, we need to re-authenticate
-                raise APIError(
-                    "Authentication failed - re-authentication required"
-                ) from refresh_exc
-
-        if response.status_code == 403:
-            # Forbidden, might need re-authentication
+        # Handle different status codes
+        if response.status_code == 307:
+            self._handle_redirect_response(response)
+        elif response.status_code == 401:
+            await self._handle_unauthorized_response()
+        elif response.status_code == 403:
             _LOGGER.warning("Access forbidden, may need re-authentication")
             raise APIError("Access forbidden - authentication may be required")
-
-        if response.status_code == 500:
-            # Server error - check if it's a tRPC error with specific format
-            try:
-                error_data = response.json()
-                if isinstance(error_data, list) and len(error_data) > 0:
-                    error_item = error_data[0]
-                    if "error" in error_item:
-                        error_details = error_item["error"]
-                        if "json" in error_details:
-                            json_error = error_details["json"]
-                            error_msg = json_error.get("message", "Unknown error")
-                            error_code = json_error.get("code", "Unknown")
-                            _LOGGER.error(
-                                "Server error (tRPC): %s (code: %s)",
-                                error_msg,
-                                error_code,
-                            )
-                            # For INTERNAL_SERVER_ERROR, try with reduced date range
-                            if error_msg == "INTERNAL_SERVER_ERROR":
-                                raise APIError(
-                                    "Server error - try reducing date range "
-                                    "or changing resolution"
-                                )
-                            else:
-                                raise APIError(f"Server error: {error_msg}")
-            except (ValueError, KeyError):
-                pass  # Fall through to generic handling
-
-            _LOGGER.error("Server error (500): %s", response.text)
-            raise APIError("Server internal error - try again later")
-
-        if response.status_code != 200:
+        elif response.status_code == 500:
+            self._handle_server_error_response(response)
+        elif response.status_code != 200:
             _LOGGER.error(
                 "Unexpected status code: %s, response: %s",
                 response.status_code,
@@ -416,18 +491,47 @@ class FortumAPIClient:
 
         return response
 
-    async def _ensure_valid_token(self) -> None:
-        """Ensure we have a valid access token."""
-        if self._auth_client.is_token_expired():
+    async def _ensure_valid_token(self, proactive: bool = True) -> None:
+        """Ensure we have a valid access token.
+
+        Args:
+            proactive: If True, renew tokens before they expire (recommended).
+                      If False, only renew after expiry (legacy behavior).
+        """
+        # Check if token needs renewal (proactive by default with 5-minute buffer)
+        if proactive and self._auth_client.needs_renewal():
+            _LOGGER.debug("Token needs proactive renewal (expires within 5 minutes)")
+            needs_refresh = True
+        elif self._auth_client.is_token_expired():
+            _LOGGER.debug("Token is expired, requires immediate renewal")
+            needs_refresh = True
+        else:
+            needs_refresh = False
+
+        if needs_refresh:
             # Check if we have a real OAuth2 refresh token or session-based token
             if (
                 self._auth_client.refresh_token
                 and self._auth_client.refresh_token != "session_based"
             ):
-                await self._auth_client.refresh_access_token()
+                _LOGGER.debug("Refreshing OAuth2 access token")
+                try:
+                    await self._auth_client.refresh_access_token()
+                    _LOGGER.info("Successfully refreshed OAuth2 access token")
+                except Exception as exc:
+                    _LOGGER.warning(
+                        "OAuth2 token refresh failed, falling back to full "
+                        "authentication: %s",
+                        exc,
+                    )
+                    await self._auth_client.authenticate()
             else:
                 # For session-based auth or no refresh token, re-authenticate
+                _LOGGER.debug(
+                    "Performing full re-authentication for session-based tokens"
+                )
                 await self._auth_client.authenticate()
+                _LOGGER.info("Successfully re-authenticated session-based tokens")
 
     async def test_connection(self) -> dict[str, Any]:
         """Test API connection and return status information."""

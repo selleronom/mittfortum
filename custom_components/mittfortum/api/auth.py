@@ -10,6 +10,7 @@ import logging
 import os
 import time
 import uuid
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, urlencode, urlparse
 
@@ -24,6 +25,18 @@ from ..models import AuthTokens
 from .endpoints import APIEndpoints
 
 _LOGGER = logging.getLogger(__name__)
+
+# Constants
+CONTENT_TYPE_JSON = "application/json"
+AUTHORIZATION_CODE_PARAM = "code="
+SESSION_BASED_TOKEN = "session_based"
+BEARER_TOKEN_TYPE = "Bearer"
+DEFAULT_TOKEN_EXPIRY_HOURS = (
+    1  # 1 hour default expiry (unused due to server bug workaround)
+)
+FIXED_TOKEN_LIFETIME_SECONDS = 900  # 15 minutes - workaround for server bug
+URGENT_RENEWAL_THRESHOLD_SECONDS = 120  # 2 minutes - reduced for shorter tokens
+DEFAULT_RENEWAL_BUFFER_SECONDS = 120  # 2 minutes - reduced for shorter tokens
 
 
 class OAuth2AuthClient:
@@ -52,6 +65,10 @@ class OAuth2AuthClient:
         self._session_data: dict[str, Any] | None = None
         self._session_cookies: dict[str, str] = {}
 
+        # Background token monitoring
+        self._token_monitor_task: asyncio.Task | None = None
+        self._monitoring_enabled: bool = False
+
     @property
     def access_token(self) -> str | None:
         """Get current access token."""
@@ -77,11 +94,117 @@ class OAuth2AuthClient:
         """Get current session cookies."""
         return self._session_cookies
 
-    def is_token_expired(self) -> bool:
-        """Check if the current token is expired."""
+    def is_token_expired(self, buffer_seconds: int = 0) -> bool:
+        """Check if the current token is expired or will expire soon.
+
+        Args:
+            buffer_seconds: Number of seconds before actual expiry to consider
+                the token expired. This allows for proactive renewal.
+                Default is 0 for backwards compatibility.
+        """
         if not self._token_expiry:
+            _LOGGER.debug(
+                "Token expiry check: No token expiry set, considering expired"
+            )
             return True
-        return time.time() >= self._token_expiry
+
+        current_time = time.time()
+        # Add buffer time for proactive renewal
+        effective_expiry = self._token_expiry - buffer_seconds
+        is_expired = current_time >= effective_expiry
+
+        if buffer_seconds > 0:
+            _LOGGER.debug(
+                "Token expiry check (with %ds buffer): current_time=%.2f, "
+                "token_expiry=%.2f, effective_expiry=%.2f, expired=%s "
+                "(diff=%.2f seconds)",
+                buffer_seconds,
+                current_time,
+                self._token_expiry,
+                effective_expiry,
+                is_expired,
+                current_time - effective_expiry,
+            )
+        else:
+            _LOGGER.debug(
+                "Token expiry check: current_time=%.2f, token_expiry=%.2f, "
+                "expired=%s (diff=%.2f seconds)",
+                current_time,
+                self._token_expiry,
+                is_expired,
+                current_time - self._token_expiry,
+            )
+        return is_expired
+
+    def needs_renewal(self) -> bool:
+        """Check if the token needs proactive renewal (2 minutes before expiry)."""
+        return self.is_token_expired(buffer_seconds=DEFAULT_RENEWAL_BUFFER_SECONDS)
+
+    def time_until_expiry(self) -> float:
+        """Get time in seconds until token expires. Returns 0 if already expired."""
+        if not self._token_expiry:
+            return 0
+        return max(0, self._token_expiry - time.time())
+
+    def _process_token_expiry(self, expires_str: str | None) -> int:
+        """Process token expiry string and return validated expires_in seconds.
+
+        WORKAROUND: Due to server bug where all refreshed tokens get the same
+        stale expiry timestamp (e.g., "2025-06-01T16:30:44.000Z"), we ignore
+        the server's expiry field and use a fixed 15-minute (900 seconds)
+        token lifetime. This prevents continuous re-authentication loops.
+
+        Args:
+            expires_str: The expiry string from the server, or None (ignored)
+
+        Returns:
+            Fixed 900 seconds (15 minutes) until token expires
+        """
+        # Log the server's broken expiry for debugging purposes
+        if expires_str:
+            _LOGGER.debug(
+                "Server provided token expiry: '%s' (IGNORED due to server bug)",
+                expires_str,
+            )
+
+            # Still parse it for comparison logging
+            try:
+                expires_dt = self._parse_server_datetime(expires_str)
+                current_time_utc = datetime.now(UTC)
+                time_diff = expires_dt - current_time_utc
+                expires_in_raw = int(time_diff.total_seconds())
+
+                _LOGGER.debug(
+                    "Server expiry would be: %d seconds (%.1f minutes) - "
+                    "but using fixed %d seconds (%.1f minutes) instead",
+                    expires_in_raw,
+                    expires_in_raw / 60,
+                    FIXED_TOKEN_LIFETIME_SECONDS,
+                    FIXED_TOKEN_LIFETIME_SECONDS / 60,
+                )
+            except Exception as exc:
+                _LOGGER.debug(
+                    "Failed to parse server expiry '%s': %s - using fixed %d seconds",
+                    expires_str,
+                    exc,
+                    FIXED_TOKEN_LIFETIME_SECONDS,
+                )
+        else:
+            _LOGGER.debug(
+                "No server expiry provided - using fixed %d seconds (%.1f minutes)",
+                FIXED_TOKEN_LIFETIME_SECONDS,
+                FIXED_TOKEN_LIFETIME_SECONDS / 60,
+            )
+
+        # Always return fixed 15-minute lifetime regardless of server response
+        _LOGGER.info(
+            "Applied workaround: Using fixed token lifetime of %d seconds "
+            "(%.1f minutes) instead of server's broken expiry timestamps",
+            FIXED_TOKEN_LIFETIME_SECONDS,
+            FIXED_TOKEN_LIFETIME_SECONDS / 60,
+        )
+
+        return FIXED_TOKEN_LIFETIME_SECONDS
 
     async def authenticate(self) -> AuthTokens:
         """Perform complete OAuth2 authentication flow using working NextAuth flow."""
@@ -111,43 +234,28 @@ class OAuth2AuthClient:
 
                 _LOGGER.info("OAuth flow completed successfully")
 
-                # Store session cookies for later API calls
-                self._session_cookies = {}
-                for cookie in client.cookies.jar:
-                    if cookie.value is not None:
-                        self._session_cookies[cookie.name] = cookie.value
-
-                _LOGGER.debug(
-                    "Stored %d session cookies for API calls",
-                    len(self._session_cookies),
-                )
+                # Store session cookies with domain prioritization to fix conflicts
+                self._session_cookies = self._extract_prioritized_cookies(client)
 
                 # Extract real tokens from session data
                 user_data = session_data.get("user", {})
-                access_token = user_data.get("accessToken", "session_based")
-                id_token = user_data.get("idToken", "session_based")
+                access_token = user_data.get("accessToken", SESSION_BASED_TOKEN)
+                id_token = user_data.get("idToken", SESSION_BASED_TOKEN)
+
+                # DEBUG: Log the entire session data to understand structure
+                _LOGGER.debug("Complete session data structure: %s", session_data)
+                _LOGGER.debug("Complete user data structure: %s", user_data)
+
                 expires_str = user_data.get("expires")
 
-                # Calculate token expiry
-                expires_in = 3600  # Default to 1 hour
-                if expires_str:
-                    try:
-                        from datetime import datetime
-
-                        expires_dt = datetime.fromisoformat(
-                            expires_str.replace("Z", "+00:00")
-                        )
-                        expires_in = int((expires_dt - datetime.now()).total_seconds())
-                        if expires_in < 0:
-                            expires_in = 3600  # Default if expired
-                    except Exception:
-                        expires_in = 3600
+                # Calculate token expiry with proper timezone handling
+                expires_in = self._process_token_expiry(expires_str)
 
                 # Create tokens with real access token
                 self._tokens = AuthTokens(
                     access_token=access_token,
-                    refresh_token="session_based",  # No refresh token in this flow
-                    token_type="Bearer",
+                    refresh_token=SESSION_BASED_TOKEN,  # No refresh token in this flow
+                    token_type=BEARER_TOKEN_TYPE,
                     expires_in=expires_in,
                     id_token=id_token,
                 )
@@ -155,6 +263,9 @@ class OAuth2AuthClient:
 
                 # Store session data for later use
                 self._session_data = session_data
+
+                # Start background token monitoring for proactive renewal
+                self.start_token_monitoring()
 
                 return self._tokens
 
@@ -188,14 +299,14 @@ class OAuth2AuthClient:
         """Initiate OAuth signin and get OAuth URL."""
         signin_data = {
             "csrfToken": csrf_token,
-            "callbackUrl": "https://www.fortum.com/se/el/sv/private/overview",
+            "callbackUrl": "https://www.fortum.com/se/el/inloggad/oversikt",
             "json": "true",
         }
 
         signin_resp = await client.post(
-            "https://www.fortum.com/se/el/api/auth/signin/ciamprod?ui_locales=sv",
-            data=signin_data,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            "https://www.fortum.com/se/el/api/auth/signin/ciamprod",
+            json=signin_data,
+            headers={"Content-Type": CONTENT_TYPE_JSON},
         )
 
         if signin_resp.status_code != 200:
@@ -215,111 +326,142 @@ class OAuth2AuthClient:
         Returns:
             Updated OAuth URL if provided by the SSO response, otherwise None.
         """
-        auth_url = (
-            "https://sso.fortum.com/am/json/realms/root/realms/alpha/authenticate"
-        )
+        try:
+            # Step 1: Navigate to OAuth URL to establish session
+            _LOGGER.debug("Navigating to OAuth URL to establish session")
+            response = await client.get(oauth_url)
+            _LOGGER.debug("OAuth page status: %d", response.status_code)
 
-        auth_params = {
-            "locale": "sv",
-            "authIndexType": "service",
-            "authIndexValue": "SeB2COGWLogin",
-            "goto": oauth_url,
-        }
+            if response.status_code != 200:
+                _LOGGER.warning("OAuth page returned %d", response.status_code)
+                # Continue anyway, as authentication might still work
 
-        auth_full_url = f"{auth_url}?{urlencode(auth_params)}"
+            # Step 2: Use ForgeRock JSON API for authentication
+            _LOGGER.debug("Using ForgeRock JSON API for SSO authentication")
 
-        # Initialize authentication
-        init_resp = await client.post(
-            auth_full_url,
-            headers={
-                "accept-api-version": "protocol=1.0,resource=2.1",
-                "content-type": "application/json",
-            },
-            json={},
-        )
+            auth_url = (
+                "https://sso.fortum.com/am/json/realms/root/realms/alpha/authenticate"
+            )
 
-        if init_resp.status_code != 200:
-            raise OAuth2Error(f"Auth init failed: {init_resp.status_code}")
+            auth_params = {
+                "locale": "sv",
+                "authIndexType": "service",
+                "authIndexValue": "SeB2COGWLogin",
+                "goto": oauth_url,
+            }
 
-        init_data = init_resp.json()
-        _LOGGER.debug("Auth init response: %s", init_data)
+            auth_full_url = f"{auth_url}?{urlencode(auth_params)}"
 
-        # Check if authId is present
-        auth_id = init_data.get("authId")
-        if not auth_id:
-            # If no authId, check for successUrl which indicates we should
-            # proceed directly
-            success_url = init_data.get("successUrl")
-            if success_url:
-                _LOGGER.debug(
-                    "No authId found, but successUrl present. "
-                    "Using successUrl as OAuth URL: %s...",
-                    success_url[:80],
-                )
-                return success_url  # Return the successUrl to use as OAuth URL
-            else:
-                raise OAuth2Error(
-                    f"No authId or successUrl in init response: {init_data}"
-                )
+            # Initialize authentication
+            _LOGGER.debug("Initializing ForgeRock authentication")
+            init_resp = await client.post(
+                auth_full_url,
+                headers={
+                    "accept-api-version": "protocol=1.0,resource=2.1",
+                    "content-type": CONTENT_TYPE_JSON,
+                },
+                json={},
+            )
 
-        callbacks = init_data.get("callbacks", [])
+            if init_resp.status_code != 200:
+                raise OAuth2Error(f"Auth init failed: {init_resp.status_code}")
 
-        # Submit credentials
-        for callback in callbacks:
-            if callback.get("type") == "StringAttributeInputCallback":
-                callback["input"] = [
-                    {"name": "IDToken5", "value": self._username},
-                    {"name": "IDToken5validateOnly", "value": False},
-                ]
-            elif callback.get("type") == "PasswordCallback":
-                callback["input"] = [{"name": "IDToken6", "value": self._password}]
+            init_data = init_resp.json()
+            _LOGGER.debug("Auth init response: %s", init_data)
 
-        login_payload = {"authId": auth_id, "callbacks": callbacks}
+            # Check if authId is present
+            auth_id = init_data.get("authId")
+            if not auth_id:
+                # If no authId, check for successUrl which indicates we should
+                # proceed directly
+                success_url = init_data.get("successUrl")
+                if success_url:
+                    _LOGGER.debug(
+                        "No authId found, but successUrl present. "
+                        "Using successUrl as OAuth URL: %s...",
+                        success_url[:80],
+                    )
+                    return success_url  # Return the successUrl to use as OAuth URL
+                else:
+                    raise OAuth2Error(
+                        f"No authId or successUrl in init response: {init_data}"
+                    )
 
-        login_resp = await client.post(
-            auth_full_url,
-            headers={
-                "accept-api-version": "protocol=1.0,resource=2.1",
-                "content-type": "application/json",
-            },
-            json=login_payload,
-        )
+            callbacks = init_data.get("callbacks", [])
 
-        if login_resp.status_code != 200:
-            raise OAuth2Error(f"Login failed: {login_resp.status_code}")
+            # Submit credentials using callback structure
+            _LOGGER.debug("Submitting credentials via ForgeRock API")
+            for callback in callbacks:
+                if callback.get("type") == "StringAttributeInputCallback":
+                    callback["input"] = [
+                        {"name": "IDToken5", "value": self._username},
+                        {"name": "IDToken5validateOnly", "value": False},
+                    ]
+                elif callback.get("type") == "PasswordCallback":
+                    callback["input"] = [{"name": "IDToken6", "value": self._password}]
 
-        login_data = login_resp.json()
-        _LOGGER.debug(
-            "SSO login successful, token: %s...", login_data.get("tokenId", "None")[:30]
-        )
+            login_payload = {"authId": auth_id, "callbacks": callbacks}
 
-        # Return None to indicate using the original OAuth URL
-        return None
+            login_resp = await client.post(
+                auth_full_url,
+                headers={
+                    "accept-api-version": "protocol=1.0,resource=2.1",
+                    "content-type": CONTENT_TYPE_JSON,
+                },
+                json=login_payload,
+            )
+
+            if login_resp.status_code != 200:
+                raise OAuth2Error(f"Login failed: {login_resp.status_code}")
+
+            login_data = login_resp.json()
+            _LOGGER.debug(
+                "SSO login successful, token: %s...",
+                login_data.get("tokenId", "None")[:30],
+            )
+
+            # Return None to indicate using the original OAuth URL
+            return None
+
+        except Exception as exc:
+            _LOGGER.error("SSO authentication failed: %s", exc)
+            raise OAuth2Error(f"SSO authentication failed: {exc}") from exc
 
     async def _complete_oauth_authorization(self, client, oauth_url: str) -> None:
         """Complete OAuth authorization flow."""
-        oauth_completion_resp = await client.get(oauth_url)
+        try:
+            oauth_completion_resp = await client.get(oauth_url)
 
-        if oauth_completion_resp.status_code != 302:
-            raise OAuth2Error(
-                f"OAuth completion failed: {oauth_completion_resp.status_code}"
-            )
+            if oauth_completion_resp.status_code != 302:
+                _LOGGER.warning(
+                    "OAuth completion returned %d instead of redirect",
+                    oauth_completion_resp.status_code,
+                )
+                return
 
-        # Follow the callback redirect chain
-        callback_url = oauth_completion_resp.headers.get("location")
-        if not callback_url or "code=" not in callback_url:
-            raise OAuth2Error("No authorization code in callback URL")
+            # Follow the callback redirect chain
+            callback_url = oauth_completion_resp.headers.get("location")
+            if not callback_url or AUTHORIZATION_CODE_PARAM not in callback_url:
+                _LOGGER.warning("No authorization code in callback URL")
+                return
 
-        _LOGGER.debug("Following callback URL...")
+            _LOGGER.debug("Following callback URL...")
 
-        # Follow callback to complete flow
-        callback_resp = await client.get(callback_url)
+            # Follow callback to complete flow
+            callback_resp = await client.get(callback_url)
 
-        # May get additional redirects
-        if callback_resp.status_code == 302:
-            final_redirect = callback_resp.headers.get("location")
-            if final_redirect:
-                await client.get(final_redirect)
+            # May get additional redirects
+            if callback_resp.status_code == 302:
+                final_redirect = callback_resp.headers.get("location")
+                if final_redirect:
+                    _LOGGER.debug("Following final redirect...")
+                    await client.get(final_redirect)
+
+            _LOGGER.debug("OAuth authorization flow completed")
+
+        except Exception as exc:
+            _LOGGER.error("OAuth authorization completion failed: %s", exc)
+            raise OAuth2Error(f"OAuth authorization failed: {exc}") from exc
 
     async def _verify_session_established(self, client) -> dict[str, Any]:
         """Verify that session is properly established."""
@@ -362,7 +504,7 @@ class OAuth2AuthClient:
             raise AuthenticationError("No refresh token available")
 
         # Handle session-based authentication - can't refresh, need to re-authenticate
-        if self._tokens.refresh_token == "session_based":
+        if self._tokens.refresh_token == SESSION_BASED_TOKEN:
             _LOGGER.debug(
                 "Session-based token detected, performing full re-authentication"
             )
@@ -395,6 +537,9 @@ class OAuth2AuthClient:
                 self._tokens = AuthTokens.from_api_response(token_data)
                 self._token_expiry = time.time() + self._tokens.expires_in
                 _LOGGER.debug("Successfully refreshed access token")
+
+                # Restart token monitoring with new expiry time
+                self.start_token_monitoring()
 
                 return self._tokens
 
@@ -560,14 +705,14 @@ class OAuth2AuthClient:
         # Look for authorization code in redirect chain
         for redirect_response in response.history:
             location = redirect_response.headers.get("Location", "")
-            if "code=" in location:
+            if AUTHORIZATION_CODE_PARAM in location:
                 parsed_url = urlparse(location)
                 code = parse_qs(parsed_url.query).get("code", [None])[0]
                 if code:
                     return code
 
         # Check final URL
-        if "code=" in str(response.url):
+        if AUTHORIZATION_CODE_PARAM in str(response.url):
             parsed_url = urlparse(str(response.url))
             code = parse_qs(parsed_url.query).get("code", [None])[0]
             if code:
@@ -620,3 +765,197 @@ class OAuth2AuthClient:
         except Exception as exc:
             _LOGGER.warning("Session validation failed with exception: %s", exc)
             return False
+
+    def _extract_prioritized_cookies(self, client) -> dict[str, str]:
+        """Extract cookies with domain prioritization to prevent stale cookie usage.
+
+        Domain-specific cookies are prioritized over empty domain cookies to ensure
+        fresh session tokens are used instead of stale ones.
+        """
+        domain_cookies = {}
+        empty_domain_cookies = {}
+
+        for cookie in client.cookies.jar:
+            if cookie.value is None:
+                continue
+
+            cookie_preview = (
+                cookie.value[:20] + "..." if len(cookie.value) > 20 else cookie.value
+            )
+            domain = getattr(cookie, "domain", "")
+            path = getattr(cookie, "path", "None")
+
+            if domain:
+                # Domain-specific cookie (prioritized)
+                domain_cookies[cookie.name] = cookie.value
+                _LOGGER.debug(
+                    "Captured domain cookie: %s=%s (domain=%s, path=%s)",
+                    cookie.name,
+                    cookie_preview,
+                    domain,
+                    path,
+                )
+            elif cookie.name not in domain_cookies:
+                # Empty domain cookie only if no domain version exists
+                empty_domain_cookies[cookie.name] = cookie.value
+                _LOGGER.debug(
+                    "Captured empty-domain cookie: %s=%s (domain=%s, path=%s)",
+                    cookie.name,
+                    cookie_preview,
+                    domain or "None",
+                    path,
+                )
+            else:
+                _LOGGER.debug(
+                    "Skipped empty-domain cookie %s - domain version exists",
+                    cookie.name,
+                )
+
+        # Combine with domain cookies taking priority
+        result_cookies = {}
+        result_cookies.update(empty_domain_cookies)
+        result_cookies.update(domain_cookies)  # Domain cookies override empty ones
+
+        _LOGGER.debug("Stored %d session cookies for API calls", len(result_cookies))
+        return result_cookies
+
+    def _parse_server_datetime(self, expires_str: str) -> datetime:
+        """Parse server datetime with robust timezone handling.
+
+        Args:
+            expires_str: Datetime string from server
+
+        Returns:
+            Parsed datetime object in UTC
+
+        Raises:
+            ValueError: If datetime string cannot be parsed
+        """
+        try:
+            # Handle common server datetime formats
+            if expires_str.endswith("Z"):
+                # ISO format with Z (UTC)
+                return datetime.fromisoformat(expires_str.replace("Z", "+00:00"))
+            elif "+00:00" in expires_str:
+                # ISO format with explicit UTC timezone
+                return datetime.fromisoformat(expires_str)
+            elif "+" in expires_str or expires_str.count("-") > 2:
+                # ISO format with timezone offset
+                return datetime.fromisoformat(expires_str)
+            else:
+                # Assume UTC if no timezone info
+                dt = datetime.fromisoformat(expires_str)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=UTC)
+                return dt
+        except ValueError as exc:
+            raise ValueError(
+                f"Cannot parse datetime string '{expires_str}': {exc}"
+            ) from exc
+
+    def start_token_monitoring(self) -> None:
+        """Start background token monitoring for proactive renewal."""
+        if self._monitoring_enabled and self._token_monitor_task:
+            return  # Already running
+
+        self._monitoring_enabled = True
+        self._token_monitor_task = asyncio.create_task(self._monitor_token_expiry())
+        _LOGGER.debug("Started background token monitoring")
+
+    async def stop_token_monitoring(self) -> None:
+        """Stop background token monitoring."""
+        self._monitoring_enabled = False
+        if self._token_monitor_task and not self._token_monitor_task.done():
+            self._token_monitor_task.cancel()
+            try:
+                await self._token_monitor_task
+            except asyncio.CancelledError:
+                pass
+        self._token_monitor_task = None
+        _LOGGER.debug("Stopped background token monitoring")
+
+    def _should_renew_token(self) -> tuple[bool, bool]:
+        """Check if token should be renewed and if it's urgent.
+
+        Returns:
+            Tuple of (should_renew, is_urgent)
+        """
+        if not self._tokens or not self._token_expiry:
+            return False, False
+
+        time_until_expiry = self.time_until_expiry()
+
+        # Check if renewal is needed (within 5 minutes for 15-minute tokens)
+        if time_until_expiry <= 300:  # 5 minutes
+            is_urgent = time_until_expiry <= URGENT_RENEWAL_THRESHOLD_SECONDS
+            return True, is_urgent
+
+        return False, False
+
+    async def _perform_proactive_renewal(self, is_urgent: bool) -> bool:
+        """Perform proactive token renewal.
+
+        Args:
+            is_urgent: Whether this is an urgent renewal
+
+        Returns:
+            True if renewal was successful, False otherwise
+        """
+        time_until_expiry = self.time_until_expiry()
+
+        if is_urgent:
+            _LOGGER.info(
+                "Token expires in %.1f minutes, performing immediate renewal",
+                time_until_expiry / 60,
+            )
+        else:
+            _LOGGER.debug(
+                "Token expires in %.1f minutes, will monitor for renewal",
+                time_until_expiry / 60,
+            )
+            return True  # No action needed yet
+
+        try:
+            await self.refresh_access_token()
+            _LOGGER.info("Proactive token renewal successful")
+            return True
+        except Exception as exc:
+            _LOGGER.error("Proactive token renewal failed: %s", exc)
+            return False
+
+    def _calculate_check_interval(self) -> int:
+        """Calculate the next check interval in seconds."""
+        if not self._tokens or not self._token_expiry:
+            return 120  # 2 minutes if no token
+
+        time_until_expiry = self.time_until_expiry()
+        # For 15-minute tokens, check more frequently (min 15s, max 60s)
+        # Check when renewal is needed (5 minutes before expiry)
+        return min(60, max(15, int(time_until_expiry - 300)))
+
+    async def _monitor_token_expiry(self) -> None:
+        """Background task to monitor token expiry and proactively renew tokens."""
+        _LOGGER.debug("Token monitoring task started")
+
+        while self._monitoring_enabled:
+            try:
+                should_renew, is_urgent = self._should_renew_token()
+
+                if should_renew:
+                    success = await self._perform_proactive_renewal(is_urgent)
+                    if not success and is_urgent:
+                        # Wait before retrying if urgent renewal failed
+                        await asyncio.sleep(30)
+                        continue
+
+                # Calculate next check interval and sleep
+                check_interval = self._calculate_check_interval()
+                await asyncio.sleep(check_interval)
+
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                _LOGGER.exception("Error in token monitoring task: %s", exc)
+                await asyncio.sleep(60)  # Wait before retrying
+
+        _LOGGER.debug("Token monitoring task stopped")

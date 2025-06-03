@@ -143,8 +143,9 @@ class TestFortumAPIClient:
         """Test _ensure_valid_token with valid token."""
         client = FortumAPIClient(mock_hass, mock_auth_client)
 
-        # Mock token as not expired
+        # Mock token as not expired and not needing renewal
         mock_auth_client.is_token_expired.return_value = False
+        mock_auth_client.needs_renewal.return_value = False
 
         with patch.object(mock_auth_client, "authenticate") as mock_auth:
             with patch.object(mock_auth_client, "refresh_access_token") as mock_refresh:
@@ -419,3 +420,54 @@ class TestFortumAPIClient:
 
                 # Verify exactly 2 calls were made (no infinite loop)
                 assert call_count == 2
+
+    async def test_session_expiration_307_redirect(self, mock_hass, mock_auth_client):
+        """Test session expiration detection via 307 redirect to TokenExpired."""
+        client = FortumAPIClient(mock_hass, mock_auth_client)
+
+        # Mock a response with 307 redirect to sign-out with TokenExpired
+        mock_response = Mock()
+        mock_response.status_code = 307
+        mock_response.headers = {
+            "Location": "/se/el/sign-out?loggedInMessage=TokenExpired"
+        }
+
+        # Test that session expiration is properly detected
+        with pytest.raises(APIError, match="Token expired - retry required"):
+            await client._handle_response(mock_response)
+
+    async def test_session_expiration_307_redirect_other(
+        self, mock_hass, mock_auth_client
+    ):
+        """Test 307 redirect to other location (not session expiration)."""
+        client = FortumAPIClient(mock_hass, mock_auth_client)
+
+        # Mock a response with 307 redirect to some other location
+        mock_response = Mock()
+        mock_response.status_code = 307
+        mock_response.headers = {"Location": "/some/other/location"}
+
+        # Test that other redirects are handled differently
+        with pytest.raises(
+            APIError, match="Unexpected redirect to: /some/other/location"
+        ):
+            await client._handle_response(mock_response)
+
+    async def test_handle_redirect_response_method(self, mock_hass, mock_auth_client):
+        """Test the _handle_redirect_response method directly."""
+        client = FortumAPIClient(mock_hass, mock_auth_client)
+
+        # Test session expiration redirect
+        mock_response = Mock()
+        mock_response.headers = {
+            "Location": "/se/el/sign-out?loggedInMessage=TokenExpired"
+        }
+
+        with pytest.raises(APIError, match="Token expired - retry required"):
+            client._handle_redirect_response(mock_response)
+
+        # Test other redirect
+        mock_response.headers = {"Location": "/other/path"}
+
+        with pytest.raises(APIError, match="Unexpected redirect to: /other/path"):
+            client._handle_redirect_response(mock_response)
