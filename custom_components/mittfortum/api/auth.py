@@ -394,11 +394,11 @@ class OAuth2AuthClient:
             for callback in callbacks:
                 if callback.get("type") == "StringAttributeInputCallback":
                     callback["input"] = [
-                        {"name": "IDToken5", "value": self._username},
-                        {"name": "IDToken5validateOnly", "value": False},
+                        {"name": "IDToken1", "value": self._username},
+                        {"name": "IDToken1validateOnly", "value": False},
                     ]
                 elif callback.get("type") == "PasswordCallback":
-                    callback["input"] = [{"name": "IDToken6", "value": self._password}]
+                    callback["input"] = [{"name": "IDToken2", "value": self._password}]
 
             login_payload = {"authId": auth_id, "callbacks": callbacks}
 
