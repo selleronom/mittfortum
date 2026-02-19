@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+## [3.0.6] - 2026-02-19
+
+### Fixed
+- Fix incorrect ID token after API changes (#22)
+
 ## [3.0.0] - 2025-05-29
 
 ### Added
