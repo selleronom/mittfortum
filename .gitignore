@@ -138,6 +138,9 @@ cython_debug/
 .vscode/settings.json.bak
 .vscode/*.code-workspace
 
+# Visual Studio
+.vs
+
 # Development Container secrets and runtime files
 .devcontainer/config/secrets.yaml
 .devcontainer/config/home-assistant_v2.db*
