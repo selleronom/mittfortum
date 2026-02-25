@@ -1,10 +1,12 @@
 """Test coordinator module."""
 
+import threading
 from datetime import datetime, timedelta
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import frame
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from custom_components.mittfortum.api.client import FortumAPIClient
@@ -16,7 +18,10 @@ from custom_components.mittfortum.models import ConsumptionData
 @pytest.fixture
 def mock_hass():
     """Create a mock Home Assistant instance."""
-    return Mock(spec=HomeAssistant)
+    hass = Mock(spec=HomeAssistant)
+    hass.loop_thread_id = threading.get_ident()
+    frame.async_setup(hass)
+    return hass
 
 
 @pytest.fixture

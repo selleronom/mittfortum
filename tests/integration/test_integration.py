@@ -184,6 +184,12 @@ class TestMittFortumIntegration:
 
         from custom_components.mittfortum.coordinator import MittFortumDataCoordinator
 
+        import threading
+
+        from homeassistant.helpers import frame
+
+        mock_hass.loop_thread_id = threading.get_ident()
+        frame.async_setup(mock_hass)
         coordinator = MittFortumDataCoordinator(
             hass=mock_hass,
             api_client=mock_api_client,

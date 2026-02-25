@@ -15,6 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+## [3.0.7] - 2026-02-25
+
+### Changed
+- Bump aiohttp from 3.11.16 to 3.13.3 (#29)
+- Bump urllib3 from 1.26.20 to 2.6.3 (#28)
+- Bump cryptography from 44.0.1 to 46.0.5 (#27)
+- Bump virtualenv from 20.31.2 to 20.39.0 (#26)
+- Bump filelock from 3.18.0 to 3.24.3 (#25)
+- Bump pillow from 11.1.0 to 12.0.0 (#24)
+
+### Fixed
+- Fix coordinator tests for Home Assistant 2026.2.3 frame helper compatibility
+
 ## [3.0.6] - 2026-02-19
 
 ### Fixed
