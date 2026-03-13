@@ -3,7 +3,7 @@ name = "mittfortum"
 version = "3.0.7"
 description = "Home Assistant custom integration for Mittfortum"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.14.2"
 dependencies = [
     "PyJWT",
     "httpx",
