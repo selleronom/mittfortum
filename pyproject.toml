@@ -16,13 +16,13 @@ dev = [
     "pytest",
     "pytest-asyncio",
     "pytest-cov",
-    "pre-commit",
+    "pre-commit>=4.0",
     "ruff",
     "python-semantic-release",
 ]
 
 [tool.ruff]
-target-version = "py313"
+target-version = "py314"
 line-length = 88
 
 [tool.ruff.lint]
