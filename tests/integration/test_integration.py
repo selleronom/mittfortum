@@ -180,13 +180,12 @@ class TestMittFortumIntegration:
 
         # Test creating a coordinator directly since full integration test
         # would require actual Home Assistant setup
+        import threading
         from datetime import timedelta
 
-        from custom_components.mittfortum.coordinator import MittFortumDataCoordinator
-
-        import threading
-
         from homeassistant.helpers import frame
+
+        from custom_components.mittfortum.coordinator import MittFortumDataCoordinator
 
         mock_hass.loop_thread_id = threading.get_ident()
         frame.async_setup(mock_hass)
